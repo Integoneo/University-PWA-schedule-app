@@ -1,0 +1,29 @@
+# === Сборочные директории CMake ===
+cpp-parser/build/
+cpp-parser/output/
+
+# === Скомпилированные бинарники и артефакты ===
+# Игнорируем всё содержимое папки exec...
+cpp-parser/exec/*
+# ...КРОМЕ файлов эксель (они нужны для тестов)
+!cpp-parser/exec/*.xlsx
+
+# Игнорируем случайные объектные файлы и библиотеки (если сборка прошла in-source)
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.out
+*.bin
+
+# === Сгенерированные файлы и логи ===
+/Makefile
+compile_commands.json
+CMakeCache.txt
+CMakeOutput.log
+
+# === Настройки редакторов и ОС (на будущее) ===
+.vscode/
+.idea/
+.DS_Store
