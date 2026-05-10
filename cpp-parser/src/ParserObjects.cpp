@@ -35,10 +35,8 @@ ParserDictionaries::ParserDictionaries() {
 	}}; // без двойных фигурных скобок компилятор ругается и не
 		// видит внутри множеств мои строки
 
-	EducationalPlaces = {
-		"учебная площадка", "шаболовская", "новокузнецкая", "садовническая", "хибинский",
-		"площадка №1",		"площадка №2", "площадка №3",	"площадка №4",
-	};
+	EducationalPlaces = {"учебная площадка", "шаболовская", "новокузнецкая", "садовническая", "хибинский",
+						 "площадка №1",		 "площадка №2", "площадка №3",	 "площадка №4",	  "edu.rguk.ru"};
 };
 
 // Глобальный объект, доступный отовсюду (const защитит от случайного изменения)
@@ -99,6 +97,7 @@ header findHeader(OpenXLSX::XLWorksheet &groupSchedule) {
 	static const re2::RE2 form_reg(R"((очная|заочная|очно-заочная|вечерняя|магистратура)\s+форма)");
 	static const re2::RE2 course_reg(R"((\d+)\s*курс)");
 	static const re2::RE2 group_reg(R"(группа\s+([а-я0-9-]+))");
+	static const re2::RE2 inst_reg(R"(^((?:учебно-научный\s+)?институт\s+[а-яё\s\-]+))");
 
 	for (int rowNumber = 1; rowNumber <= rowNumberMax; rowNumber++) {
 		excelHeader.map = columnsMap{};
@@ -121,6 +120,11 @@ header findHeader(OpenXLSX::XLWorksheet &groupSchedule) {
 				continue;
 
 			// === ЛОВИМ МЕТАДАННЫЕ С ПОМОЩЬЮ RE2 ===
+
+			// Ловим название института
+			if (excelHeader.meta.institute.empty()) {
+				re2::RE2::PartialMatch(currentColumn.columnName, inst_reg, &excelHeader.meta.institute);
+			}
 
 			// Ловим форму обучения
 			if (excelHeader.meta.educationForm.empty()) {
@@ -184,7 +188,7 @@ void scanner::extractRow() {
 		bool doesColumnExist = headerIndexes[currentCell] > 0;
 		std::string currentString = "";
 		if (doesColumnExist) {
-			currentString = getSafeString(this->currentRow, headerIndexes[currentCell], this->groupSchedule);
+			currentString = getSafeString(this->currentRow, headerIndexes[currentCell], this->groupSchedule, true);
 
 			if (currentString != "") {
 				// Я считаю количество значащих ячеек, что бы вычислить строчки обозначающие учебные площадки
@@ -197,7 +201,9 @@ void scanner::extractRow() {
 
 				for (std::string s : dictionaries.EducationalPlaces) {
 
-					if (currentString.find(s) != std::string::npos) {
+					std::string lowerForCheck = toLowerUTF8Cyrillic(currentString);
+					// приводим для проверки к малому регистру, просто что бы не раздувать словарь учебных площадок
+					if (lowerForCheck.find(s) != std::string::npos) {
 						counterOfEducationalStrings += 1;
 						is_educational_place = true; // 3. Нашли площадку! Меняем флаг.
 						if (this->rowObject.educationalIndexes.size() < 2) {

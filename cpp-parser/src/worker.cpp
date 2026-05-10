@@ -1,4 +1,5 @@
 #include "ParserObjects.hpp"
+#include "Utils.hpp"
 #include "XLSheet.hpp"
 #include <OpenXLSX.hpp>
 #include <iostream>
@@ -19,6 +20,8 @@ int main() {
 	XLDocument doc;
 	doc.open("./Schedule.xlsx");
 
+	string instituteState = "";
+
 	for (size_t i = 1; i <= doc.workbook().worksheetCount(); ++i) {
 		auto workbook = doc.workbook();
 		auto wks = doc.workbook().worksheet(i);
@@ -32,7 +35,15 @@ int main() {
 		header checkedHead;
 
 		checkedHead = findHeader(wks);
+		if (checkedHead.meta.institute == "") {
+			checkedHead.meta.institute = instituteState;
+		} else {
+			instituteState = checkedHead.meta.institute;
+		}
+
 		json root;
+
+		root["Institute"] = checkedHead.meta.institute;
 		root["Group"] = checkedHead.meta.groupName;
 		root["Course"] = checkedHead.meta.course;
 		root["Start-education-date"] = checkedHead.meta.startDate;
@@ -42,8 +53,11 @@ int main() {
 		//  Создаем пустой массив для пар
 		root["lessons"] = json::array();
 
-		re2::RE2 time_reg(R"((\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2}))"); // регулярка для того что бы достать время начала
-																	   // и концка пары из ячейки времени
+		static const re2::RE2 time_reg(
+			R"((\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2}))"); // регулярка для того что бы достать время начала
+														 // и концка пары из ячейки времени
+		static const re2::RE2 teachers_reg(
+			R"((?i)([а-яё]+(?:['\-][а-яё]+)*[\s\xA0]*[а-яё][\s\xA0]*\.(?:[\s\xA0]*[а-яё][\s\xA0]*\.)?))");
 
 		if (checkedHead.readyHeader) {
 			scanner wideScan = {
@@ -56,6 +70,9 @@ int main() {
 			string dayOfWeekState = "";
 			// я буду считать что таблица закончилась, если встретил 5 подряд идуших
 			// пустых или ошибочных ячеек
+
+			using SR = scanner::scheduleRow;
+
 			for (int endCounter = 0; endCounter < 6; wideScan.nextRow()) {
 
 				wideScan.extractRow();
@@ -65,15 +82,13 @@ int main() {
 					endCounter += 1;
 				} else if (wideScan.currentStatus == scanner::response::EducationalPlaces) {
 					endCounter = 0;
-					educationalPlaceOddState =
-						wideScan.rowObject.storage[scanner::scheduleRow::Index::educationalPlaceOdd];
-					educationalPlaceEvenState =
-						wideScan.rowObject.storage[scanner::scheduleRow::Index::educationalPlaceEven];
+					educationalPlaceOddState = wideScan.rowObject.storage[SR::Index::educationalPlaceOdd];
+					educationalPlaceEvenState = wideScan.rowObject.storage[SR::Index::educationalPlaceEven];
 				} else if (wideScan.currentStatus == scanner::response::LessonRow ||
 						   wideScan.currentStatus == scanner::response::BlankLessonRow) {
 					endCounter = 0;
 
-					string currentDayOfWeek = wideScan.rowObject.storage[scanner::scheduleRow::Index::dayOfWeek];
+					string currentDayOfWeek = wideScan.rowObject.storage[SR::Index::dayOfWeek];
 
 					if (currentDayOfWeek != "" &&
 						currentDayOfWeek !=
@@ -81,14 +96,12 @@ int main() {
 											  // не равно пустой строке будем считать что это новый день недели
 						dayOfWeekState = currentDayOfWeek;
 					} else if (currentDayOfWeek == "") {
-						wideScan.rowObject.storage[scanner::scheduleRow::Index::dayOfWeek] = dayOfWeekState;
+						wideScan.rowObject.storage[SR::Index::dayOfWeek] = dayOfWeekState;
 					}
 
-					wideScan.rowObject.storage[scanner::scheduleRow::Index::educationalPlaceOdd] =
-						educationalPlaceOddState;
+					wideScan.rowObject.storage[SR::Index::educationalPlaceOdd] = educationalPlaceOddState;
 
-					wideScan.rowObject.storage[scanner::scheduleRow::Index::educationalPlaceEven] =
-						educationalPlaceEvenState;
+					wideScan.rowObject.storage[SR::Index::educationalPlaceEven] = educationalPlaceEvenState;
 
 					if (wideScan.currentStatus == scanner::response::LessonRow) {
 						json oddLesson;
@@ -98,7 +111,6 @@ int main() {
 						evenLesson["is_even_week"] = true;
 
 						// Делаем короткий псевдоним, чтобы не писать длинные scanner::scheduleRow
-						using SR = scanner::scheduleRow;
 
 						oddLesson[SR::IndexNames[SR::Index::educationalPlaceOdd]] =
 							wideScan.rowObject.storage[SR::Index::educationalPlaceOdd];
@@ -116,11 +128,22 @@ int main() {
 							if (i >= SR::Index::oddInfoStart && i <= SR::Index::oddInfoEnd) {
 								if (stringIsntEmpty)
 									oddPayLoadFlag = true;
-								oddLesson[SR::IndexNames[i]] = s;
+
+								if (SR::IndexNames[i] == "teachers") {
+									oddLesson[SR::IndexNames[i]] = extractToJsonArray(s, teachers_reg);
+								} else {
+									oddLesson[SR::IndexNames[i]] = s;
+								}
+
 							} else if (i >= SR::Index::evenInfoStart && i <= SR::Index::evenInfoEnd) {
 								if (stringIsntEmpty)
 									evenPayLoadFlag = true;
-								evenLesson[SR::IndexNames[i]] = s;
+
+								if (SR::IndexNames[i] == "teachers") {
+									evenLesson[SR::IndexNames[i]] = extractToJsonArray(s, teachers_reg);
+								} else {
+									evenLesson[SR::IndexNames[i]] = s;
+								}
 							} else {
 
 								// Общие ячейки (время, день недели) пишем в обе недели
@@ -166,7 +189,7 @@ int main() {
 			auto redis = sw::redis::Redis("tcp://127.0.0.1:6379");
 
 			// Сериализуем наш JSON-объект в обычую  строку без отступов что бы сэкономить места
-			std::string payload = root.dump();
+			std::string payload = root.dump(4);
 
 			redis.rpush("ready_schedules", payload);
 

@@ -75,6 +75,7 @@ struct columnsMap {
 };
 
 struct ScheduleMetadata {
+	std::string institute = "";
 	std::string groupName = "";
 	std::string startDate = "";
 	std::string endDate = "";
@@ -164,8 +165,8 @@ struct scanner {
 
 		static constexpr std::array<std::string_view, Index::ItemCounter> IndexNames = {
 			"day_of_week",		 "number_of_lesson", "time_slot", "classroom",
-			"type_of_lesson",	 "teacher",			 "lesson",	  "lesson",
-			"classroom",		 "type_of_lesson",	 "teacher",	  "plug",
+			"type_of_lesson",	 "teachers",		 "lesson",	  "lesson",
+			"classroom",		 "type_of_lesson",	 "teachers",  "plug",
 			"educational_place", "educational_place"};
 		// HACK: очень грязный способ прописать соответсвенные имена для json полей для отправки на сервер,
 		// сделано просто чтобы не плодить if и написать все в цикле

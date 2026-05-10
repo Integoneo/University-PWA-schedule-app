@@ -22,8 +22,11 @@ cpp-parser/exec/*
 compile_commands.json
 CMakeCache.txt
 CMakeOutput.log
-
+__pycache__
 # === Настройки редакторов и ОС (на будущее) ===
 .vscode/
 .idea/
 .DS_Store
+venv/
+# === Игнорим конфиги для питона ===
+.env

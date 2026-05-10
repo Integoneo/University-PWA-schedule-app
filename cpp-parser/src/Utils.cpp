@@ -1,5 +1,7 @@
 #include "Utils.hpp"
 #include <OpenXLSX.hpp>
+#include <nlohman-json/json.hpp>
+#include <re2/re2.h>
 #include <string>
 
 std::string toLowerUTF8Cyrillic(const std::string &str) {
@@ -54,9 +56,9 @@ std::string toLowerUTF8Cyrillic(const std::string &str) {
  * Безопасно извлекает текст из ячейки, очищает его от пробелов и приводит к
  * нижнему регистру (с поддержкой кириллицы).
  */
-std::string getSafeString(uint32_t row, uint32_t col, OpenXLSX::XLWorksheet &wks) {
+std::string getSafeString(uint32_t row, uint32_t col, OpenXLSX::XLWorksheet &wks, bool skip_case) {
 	try {
-		// 1. Защита от пустых ячеек
+		//  Защита от пустых ячеек
 		auto cell = wks.cell(row, col);
 		auto type = cell.value().type();
 
@@ -64,7 +66,7 @@ std::string getSafeString(uint32_t row, uint32_t col, OpenXLSX::XLWorksheet &wks
 			return "";
 		}
 
-		// 2. Безопасное извлечение с учетом типа данных Excel
+		//  Безопасное извлечение с учетом типа данных Excel
 		std::string raw = "";
 
 		switch (type) {
@@ -102,11 +104,31 @@ std::string getSafeString(uint32_t row, uint32_t col, OpenXLSX::XLWorksheet &wks
 		size_t last = raw.find_last_not_of(whitespace);
 		std::string trimmed = raw.substr(first, (last - first + 1));
 
-		// 4. Применяем наш самописный нижний регистр для кириллицы
+		// 4. самописный нижний регистр для кириллицы -- используется только для поиска колонок и метаданных
+		// данные из самой таблицы извлекаются в таком регистре - как есть
+		if (skip_case) {
+			return trimmed;
+		}
+
 		return toLowerUTF8Cyrillic(trimmed);
 
 	} catch (...) {
 		// Ловим любые исключения библиотеки OpenXLSX
 		return "";
 	}
+}
+
+nlohmann::json extractToJsonArray(const std::string &str, const re2::RE2 &reg) {
+	// Инициализируем пустой JSON-массив
+	nlohmann::json result = nlohmann::json::array();
+
+	re2::StringPiece input(str);
+	std::string match;
+
+	// Ищем все вхождения, пока они не закончатся в строке
+	while (re2::RE2::FindAndConsume(&input, reg, &match)) {
+		result.push_back(match);
+	}
+
+	return result;
 }
