@@ -14,6 +14,7 @@ services:
       - "5433:5432"
     volumes:
       # Сохраняем данные БД физически на диске, чтобы они не удалились при остановке контейнера
+      - ./init-db-extensions.sql:/docker-entrypoint-initdb.d/init-db-extensions.sql
       - postgres_data:/var/lib/postgresql/data
 
 volumes:

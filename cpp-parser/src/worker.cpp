@@ -1,6 +1,7 @@
 #include "ParserObjects.hpp"
 #include "Utils.hpp"
 #include "XLSheet.hpp"
+#include "sw/redis++/redis.h"
 #include <OpenXLSX.hpp>
 #include <iostream>
 #include <nlohman-json/json.hpp>
@@ -191,9 +192,9 @@ int main() {
 			// Сериализуем наш JSON-объект в обычую  строку без отступов что бы сэкономить места
 			std::string payload = root.dump(4);
 
-			redis.rpush("ready_schedules", payload);
+			redis.xadd("ready_schedules", "*", {std::make_pair("payload", payload)});
 
-			std::cout << "Успешно отправлено в Redis (очередь ready_schedules)!" << std::endl;
+			std::cout << "Успешно отправлено в Redis Streams (Ключ ready_schedules)!" << std::endl;
 		} catch (const sw::redis::Error &e) {
 			// Ловим сетевые ошибки (например, если сервер Redis упал)
 			std::cerr << "Ошибка Redis: " << e.what() << std::endl;

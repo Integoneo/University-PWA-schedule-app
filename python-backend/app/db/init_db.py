@@ -30,14 +30,18 @@ def insert_initial_config():
 
     with Session(sync_engine) as session:
         # Проверяем, нет ли уже этой настройки в базе
-        existing_config = session.get(AppConfig, "semester_anchor_date")
+        existing_config = session.get(AppConfig, "semester_config")
 
         if not existing_config:
-            anchor_date = AppConfig(key="semester_anchor_date", value="2026-03-23")
-            anchor_is_even = AppConfig(key="anchor_is_even", value="false")
+            config_data = {
+                "semester_anchor_date": "2026-03-23",
+                "anchor_is_even": False,  # В JSON можно сразу использовать булево значение, а не строку "false"
+            }
 
-            session.add(anchor_date)
-            session.add(anchor_is_even)
+            # Создаем одну запись в базе, передавая словарь в ваше JSON-поле
+            anchor_config = AppConfig(key="semester_config", value=config_data)
+
+            session.add(anchor_config)
             session.commit()
             print("✅ Настройки успешно сохранены!")
         else:

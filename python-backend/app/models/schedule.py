@@ -1,6 +1,19 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import time, date, datetime, timezone
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import JSON, SQLModel, Field, Relationship
+from enum import Enum
+
+
+class GroupStatus(str, Enum):
+    # Воркер начал работу над расписанием, но еще не закончил
+    # (или расписание в процессе пересборки)
+    UPDATING = "updating"
+
+    # Всё успешно спарсилось, сохранено, готово к выдаче в PWA
+    READY = "ready"
+
+    # Расписание пришло сломанным, деканат накосячил, нужна ручная проверка
+    ERROR = "error"
 
 
 class LessonTeacherLink(SQLModel, table=True):
@@ -19,7 +32,8 @@ class Institute(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
-
+    short_name: str
+    icon_url: Optional[str] = Field(default=None)
     groups: List["Group"] = Relationship(back_populates="institute")
 
 
@@ -28,21 +42,23 @@ class Group(SQLModel, table=True):
     __tablename__: str = "groups"  # type: ignore
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True, unique=True)
-    course: str
-    education_form: str
+    name: str = Field(index=True)
+    course: Optional[str] = Field(default=None)
+    education_form: Optional[str] = Field(default=None)
 
-    # Даты обучения (настоящий тип Date)
     start_education_date: date
     end_education_date: date
 
     institute_id: int = Field(foreign_key="institutes.id")
-    institute: Optional[Institute] = Relationship(back_populates="groups")
+    institute: Institute = Relationship(back_populates="groups")
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
     )
 
     lessons: List["Lesson"] = Relationship(back_populates="group")
+
+    status: GroupStatus = Field(default=GroupStatus.UPDATING)
+    data_hash: str = Field(index=True, max_length=16, min_length=16)
 
 
 # 3. Таблица Преподавателей
@@ -64,7 +80,7 @@ class Lesson(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     group_id: int = Field(foreign_key="groups.id")
 
-    day_of_week: str
+    day_of_week: int = Field(ge=0, le=6)
     number_of_lesson: int
     is_even_week: bool
 
@@ -72,11 +88,11 @@ class Lesson(SQLModel, table=True):
     end_time: time
 
     lesson_name: str
-    type_of_lesson: str
-    classroom: str
+    type_of_lesson: Optional[str] = Field(default=None)
+    classroom: Optional[str] = Field(default=None)
     educational_place: str
 
-    group: Optional[Group] = Relationship(back_populates="lessons")
+    group: Group = Relationship(back_populates="lessons")
     teachers: List[Teacher] = Relationship(
         back_populates="lessons", link_model=LessonTeacherLink
     )
@@ -89,6 +105,6 @@ class Lesson(SQLModel, table=True):
 class AppConfig(SQLModel, table=True):
     __tablename__: str = "app_config"  # type: ignore
 
-    key: str = Field(primary_key=True)
+    key: str = Field(primary_key=True, index=True, max_length=32)
 
-    value: str
+    value: Any = Field(sa_type=JSON)
