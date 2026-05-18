@@ -4,6 +4,10 @@ from sqlmodel import JSON, SQLModel, Field, Relationship
 from enum import Enum
 
 
+def get_utc_now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class GroupStatus(str, Enum):
     # Воркер начал работу над расписанием, но еще не закончил
     # (или расписание в процессе пересборки)
@@ -52,7 +56,7 @@ class Group(SQLModel, table=True):
     institute_id: int = Field(foreign_key="institutes.id")
     institute: Institute = Relationship(back_populates="groups")
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        default_factory=get_utc_now, sa_column_kwargs={"onupdate": get_utc_now}
     )
 
     lessons: List["Lesson"] = Relationship(back_populates="group")
