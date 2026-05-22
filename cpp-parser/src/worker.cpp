@@ -192,7 +192,10 @@ int main() {
 			// Сериализуем наш JSON-объект в обычую  строку без отступов что бы сэкономить места
 			std::string payload = root.dump(4);
 
-			redis.xadd("ready_schedules", "*", {std::make_pair("payload", payload)});
+			redis.xadd("ready_schedules", "*",
+					   {
+						   std::make_pair("payload", payload),
+					   });
 
 			std::cout << "Успешно отправлено в Redis Streams (Ключ ready_schedules)!" << std::endl;
 		} catch (const sw::redis::Error &e) {
