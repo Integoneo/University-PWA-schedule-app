@@ -9,6 +9,8 @@
 #include <re2/re2.h>
 #include <string>
 #include <sw/redis++/redis++.h>
+#include <utility>
+#include <vector>
 
 using namespace std;
 using json = nlohmann::json;
@@ -189,13 +191,12 @@ int main() {
 			// Подключаемся к локальному серверу Redis по стандартному порту
 			auto redis = sw::redis::Redis("tcp://127.0.0.1:6379");
 
-			// Сериализуем наш JSON-объект в обычую  строку без отступов что бы сэкономить места
+			// TODO: Сделать 0 отступов для продакшена, пока висит 4 для удобства чтения
 			std::string payload = root.dump(4);
 
-			redis.xadd("ready_schedules", "*",
-					   {
-						   std::make_pair("payload", payload),
-					   });
+			std::vector<std::pair<std::string, std::string>> redis_msg = {{"payload", payload}, {"type", "lessons"}};
+
+			redis.xadd("ready_schedules", "*", redis_msg.begin(), redis_msg.end());
 
 			std::cout << "Успешно отправлено в Redis Streams (Ключ ready_schedules)!" << std::endl;
 		} catch (const sw::redis::Error &e) {
