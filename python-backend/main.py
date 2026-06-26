@@ -8,6 +8,9 @@ from app.db.init_db import create_db_and_tables, insert_initial_config
 # Импортируем нашего воркера
 from worker import main_worker_loop
 
+# Импортируем роутер
+from app.api.router import api_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,6 +48,8 @@ async def lifespan(app: FastAPI):
 
 # Инициализация приложения FastAPI
 app = FastAPI(title="University Schedule API", lifespan=lifespan)
+
+app.include_router(api_router, prefix="/api/v1")
 
 
 # Простой тестовый эндпоинт
