@@ -1,6 +1,6 @@
 from typing import List, Optional, Any
 from datetime import time, date, datetime, timezone
-from sqlmodel import JSON, SQLModel, Field, Relationship
+from sqlmodel import JSON, SQLModel, Field, Relationship, asc
 from enum import Enum
 
 
@@ -38,7 +38,10 @@ class Institute(SQLModel, table=True):
     name: str = Field(index=True, unique=True)
     short_name: str
     icon_url: Optional[str] = Field(default=None)
-    groups: List["Group"] = Relationship(back_populates="institute")
+    groups: List["Group"] = Relationship(
+        back_populates="institute",
+        sa_relationship_kwargs={"order_by": "asc(Group.id)"},
+    )
 
 
 # 2. Таблица групп

@@ -24,7 +24,7 @@ def create_db_and_tables():
     print("============================================")
     print("В РЕЖИМЕ РАЗРАБОТКИ - УДАЛЯЕМ ВСЕ ТАБЛИЦЫ В БД")
     print("============================================")
-    SQLModel.metadata.drop_all(sync_engine)
+    # SQLModel.metadata.drop_all(sync_engine)
     print("⏳ Создание таблиц...")
     SQLModel.metadata.create_all(sync_engine)
 
