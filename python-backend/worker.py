@@ -50,9 +50,21 @@ async def main_worker_loop():
                     validated_schedule = SchedulePayloadSchema(**raw_dict)
 
                     async for session in get_async_session():
-                        await process_schedule(session, validated_schedule, check_hash)
+                        # 👇 ЛОВИМ КОРТЕЖ ИЗ ФУНКЦИИ
+                        group_id, should_notify = await process_schedule(
+                            session, validated_schedule, check_hash
+                        )
 
-                    print(f"[{msg_id.decode()}] Успех: {validated_schedule.group}")
+                        print(f"[{msg_id.decode()}] Успех: {validated_schedule.group}")
+
+                        # 👇ЗАГЛУШКА ДЛЯ PUSH УВЕДОМЛЕНИЙ СТУДЕНТАМ
+                        if should_notify:
+                            print(
+                                f"🔔 [PUSH STUB] Расписание группы {validated_schedule.group} (ID: {group_id}) изменилось!"
+                            )
+                            print(
+                                "🔔 [PUSH STUB] Имитация отправки push-уведомлений всем подписанным устройствам..."
+                            )
 
                 except ValidationError as e:
                     print(

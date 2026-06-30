@@ -1,8 +1,19 @@
+from typing import Tuple
 from sqlmodel import select, delete, func, col
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.schedule import Institute, Group, Teacher, Lesson, GroupStatus
+from app.models.schedule import (
+    Institute,
+    Group,
+    Teacher,
+    Lesson,
+    GroupStatus,
+    LessonTeacherLink,
+)
 from .schemas import SchedulePayloadSchema
 from .utils import merge_lessons_logic
+import redis.asyncio as aioredis
+from app.db.cache import CacheKeys
+from app.db.config import settings
 
 
 class ORMStateError(Exception):
@@ -11,13 +22,13 @@ class ORMStateError(Exception):
 
 async def process_schedule(
     session: AsyncSession, schedule: SchedulePayloadSchema, raw_hash: str
-):
+) -> Tuple[int, bool]:
     """
     Основная логика обновления расписания.
     Принимает УЖЕ валидированные данные от Pydantic.
     """
-    # ❌ Удален вызов normalize_name, так как Pydantic уже сгенерировал
-    # schedule.institute и schedule.institute_short_name
+
+    r = aioredis.from_url(settings.REDIS_URL)
 
     # === БЛОК 1: ИНСТИТУТ И ГРУППА ===
     request = select(Institute).where(
@@ -30,7 +41,9 @@ async def process_schedule(
         inst_match = Institute(
             name=schedule.institute, short_name=schedule.institute_short_name
         )
+
         session.add(inst_match)
+        await r.delete(CacheKeys.institutes)
         await session.flush()
 
     # 🛡 TYPE GUARD: Успокаиваем Pyright, доказывая, что ID точно есть
@@ -56,11 +69,16 @@ async def process_schedule(
             data_hash=raw_hash,
         )
         session.add(group_match)
+
+        await r.delete(CacheKeys.institutes)
+
         await session.flush()
+        notify_response = (group_match.id, False)  # Группа новая, уведомлять некого
     else:
+        notify_response = (group_match.id, True)
         # Если хэши совпали - расписание не менялось
-        if group_match.data_hash == raw_hash:
-            return
+        if group_match.data_hash == raw_hash and group_match.id is not None:
+            return (group_match.id, False)
 
         # 🛡 TYPE GUARD: Защита перед delete запросом
         if group_match.id is None:
@@ -68,10 +86,20 @@ async def process_schedule(
                 f"Аномалия БД: Группе '{schedule.group}' не присвоен ID"
             )
 
+        await r.delete(CacheKeys.group(group_match.id))
+
+        subquery = select(Lesson.id).where(col(Lesson.group_id) == group_match.id)
+        await session.execute(
+            delete(LessonTeacherLink).where(
+                col(LessonTeacherLink.lesson_id).in_(subquery)
+            )
+        )
+
         # Удаляем старые пары
         await session.execute(
             delete(Lesson).where(col(Lesson.group_id) == group_match.id)
         )
+
         group_match.data_hash = raw_hash
         group_match.start_education_date = schedule.start_education_date
         group_match.end_education_date = schedule.end_education_date
@@ -126,6 +154,10 @@ async def process_schedule(
 
     group_match.status = GroupStatus.READY
     await session.commit()
+
+    return notify_response  # type: ignore
+
+    # TODO: МЕСТО ДЛЯ ОТПРАВКИ УВЕДОМЛЕНИЯ ОБ ИЗМЕНЕНИИ ПАР
 
 
 # Почитать при рефакторинге анализ моего алгоритма от нейронки:

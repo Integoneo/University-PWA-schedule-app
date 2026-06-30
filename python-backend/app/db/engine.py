@@ -11,7 +11,7 @@ DATABASE_URL = (
 
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,  # TODO: вынести это потом в .env в обьект настроки
+    echo=False,  # TODO: вынести это потом в .env в обьект настроки
 )
 
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)

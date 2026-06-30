@@ -1,6 +1,6 @@
 from typing import List, Optional, Any
 from datetime import time, date, datetime, timezone
-from sqlmodel import JSON, SQLModel, Field, Relationship, asc
+from sqlmodel import JSON, SQLModel, Field, Relationship, asc, ForeignKey
 from enum import Enum
 
 
@@ -23,10 +23,17 @@ class GroupStatus(str, Enum):
 class LessonTeacherLink(SQLModel, table=True):
     __tablename__: str = "lesson_teacher_link"  # type: ignore
     lesson_id: Optional[int] = Field(
-        default=None, foreign_key="lessons.id", primary_key=True
+        default=None,
+        foreign_key="lessons.id",
+        primary_key=True,
+        sa_column_args=[ForeignKey("lessons.id", ondelete="CASCADE")],
     )
+
     teacher_id: Optional[int] = Field(
-        default=None, foreign_key="teachers.id", primary_key=True
+        default=None,
+        foreign_key="teachers.id",
+        primary_key=True,
+        sa_column_args=[ForeignKey("teachers.id", ondelete="CASCADE")],
     )
 
 
@@ -62,7 +69,13 @@ class Group(SQLModel, table=True):
         default_factory=get_utc_now, sa_column_kwargs={"onupdate": get_utc_now}
     )
 
-    lessons: List["Lesson"] = Relationship(back_populates="group")
+    lessons: List["Lesson"] = Relationship(
+        back_populates="group",
+        # Сортируем пары по дню недели (0-6), а внутри дня — по номеру пары
+        sa_relationship_kwargs={
+            "order_by": "asc(Lesson.is_even_week), asc(Lesson.day_of_week), asc(Lesson.number_of_lesson)"
+        },
+    )
 
     status: GroupStatus = Field(default=GroupStatus.UPDATING)
     data_hash: str = Field(index=True, max_length=16, min_length=16)
@@ -101,7 +114,10 @@ class Lesson(SQLModel, table=True):
 
     group: Group = Relationship(back_populates="lessons")
     teachers: List[Teacher] = Relationship(
-        back_populates="lessons", link_model=LessonTeacherLink
+        back_populates="lessons",
+        link_model=LessonTeacherLink,
+        # Сортируем преподов по алфавиту (на случай если их два на одной паре)
+        sa_relationship_kwargs={"order_by": "asc(Teacher.name)"},
     )
 
 
