@@ -28,5 +28,6 @@ __pycache__
 .idea/
 .DS_Store
 venv/
+.venv/
 # === Игнорим конфиги для питона ===
 .env
