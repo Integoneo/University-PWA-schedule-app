@@ -1,11 +1,14 @@
 import asyncio
 import aiohttp
 import bs4
+import json
 import logging
 import redis.asyncio as aioredis
+from time import time
 from utils import (
     parse_and_count_schedule,
     check_anomaly_and_save_stats,
+    parse_head_info,
     process_schedules_to_redis,
 )
 
@@ -37,6 +40,8 @@ class DOMStructureChangedError(Exception):
 
 
 async def main():
+    START_TIME = time()
+
     logger.info("Запуск Observer...")
 
     # 1. Подключаемся к Redis
@@ -66,8 +71,16 @@ async def main():
                 # Если будет выброшен DOMStructureChangedError, скрипт прервется и до сохранения данных не дойдет
                 await check_anomaly_and_save_stats(r, current_stats)
 
+                parsed_data = await parse_head_info(session, parsed_data)
+
+                await process_schedules_to_redis(parsed_data)
+
+                pretty_json = json.dumps(parsed_data, indent=4, ensure_ascii=False)
+                logger.info(f"Получены данные:\n{pretty_json}")
+                logging.info(f"Время работы: {time() - START_TIME}")
+
                 # 4. Обработка и сохранение данных в Redis
-                await process_schedules_to_redis(r, parsed_data)
+                # await process_schedules_to_redis(r, parsed_data)
 
     except DOMStructureChangedError as e:
         logger.critical(f"РАБОТА ОСТАНОВЛЕНА: {e}")

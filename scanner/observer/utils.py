@@ -1,9 +1,16 @@
-import bs4
-import redis.asyncio as aioredis
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Optional
 from urllib.parse import urljoin
+from functools import wraps
+from time import time
+import random
+import bs4
+import aiohttp
+import asyncio
 import logging
 import json
+
+
+from redis_db import redis_pool
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -41,6 +48,11 @@ THRESHOLDS = {
 # TODO: Придумать как вынести это в отдельный настроечный файл
 STATS_KEY = "observer:stats:last_run"
 SCHEDULES_KEY = "observer:schedules"
+
+EXCEL_SRC_DLQ = "observer:DLQ:head_requests"
+BAN_TIME = 1200  # Ссылки по которым не прошли head запросы, банятся на 20 минут
+
+BATCH_SIZE = 5
 
 
 # TODO: В будущем вынести это в отдельный файл для кастомных ошибок
@@ -268,33 +280,242 @@ async def check_anomaly_and_save_stats(
     logger.info("Метрики успешно сохранены в Redis.")
 
 
-async def process_schedules_to_redis(r: aioredis.Redis, parsed_data: List[Dict]):
-    """Записывает расписания в Redis и логирует изменения."""
+def fallback_head_DLQ(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
 
+        # 1. Легкое извлечение URL
+        url_dict = kwargs.get("url_dict")
+        if not url_dict and len(args) >= 2:
+            url_dict = args[1]
+
+        url = url_dict.get("file_url") if url_dict else None
+
+        if not url:
+            # Если URL вообще не пришел, даже не пытаемся стучаться
+            return None
+
+        # 2. ФЕЙСКОНТРОЛЬ (Проверка Карантина)
+        # Делаем один запрос в Redis, чтобы забрать текущее состояние
+        dlq_item_str = await redis_pool.hget(EXCEL_SRC_DLQ, url)
+
+        dlq_state = None
+        base_count_attempt = 0
+
+        if dlq_item_str:
+            dlq_state = json.loads(dlq_item_str)
+            failed_at = dlq_state.get("failed_at", 0)
+
+            # Проверяем, прошло ли 20 минут
+            if time() - failed_at < BAN_TIME:
+                # Время не вышло. Молча возвращаем None, не трогая сеть.
+                return None
+            else:
+                # Время вышло. Выпускаем из карантина, но запоминаем прошлые ошибки
+                base_count_attempt = len(dlq_state.get("attempts", []))
+        else:
+            dlq_state = {"meta_info": url_dict, "attempts": []}
+
+        # 3. БОЕВОЙ ЦИКЛ (3 попытки)
+        for i in range(1, 4):
+            current_attempt = base_count_attempt + i
+
+            try:
+                result: Optional[Dict[str, Optional[str]]] = await func(*args, **kwargs)
+
+                if result is None:
+                    raise Exception("Сервер ответил но все заголовки оказались пустыми")
+                # Если успех — вычищаем ссылку из Карантина
+                if dlq_item_str:
+                    await redis_pool.hdel(EXCEL_SRC_DLQ, url)
+
+                return result
+
+            except aiohttp.ClientResponseError as e:
+                err_obj = {
+                    "attempt": current_attempt,
+                    "type": f"HTTP {e.status}",
+                    "msg": e.message,
+                }
+            except aiohttp.ClientConnectionError as e:
+                err_obj = {
+                    "attempt": current_attempt,
+                    "type": "ConnectionError",
+                    "details": str(e),
+                }
+            except asyncio.TimeoutError:
+                err_obj = {
+                    "attempt": current_attempt,
+                    "type": "Timeout",
+                    "details": "Превышено время ожидания",
+                }
+            except Exception as e:
+                err_obj = {
+                    "attempt": current_attempt,
+                    "type": e.__class__.__name__,
+                    "details": str(e),
+                }
+
+            # Складываем ошибку в локальный массив
+            dlq_state["attempts"].append(err_obj)
+
+            # Exponential Backoff: перед 2-й попыткой спим 2 сек, перед 3-й спим 4 сек
+            if i < 3:
+                await asyncio.sleep(2**i)
+
+        # 4. ФИКСАЦИЯ ПРОВАЛА
+        # Если цикл закончился, и мы не сделали return result, значит все 3 попытки сгорели.
+        # Обновляем время падения и пишем в Redis ОДИН РАЗ.
+        dlq_state["failed_at"] = time()
+
+        await redis_pool.hset(
+            EXCEL_SRC_DLQ, url, json.dumps(dlq_state, ensure_ascii=False)
+        )
+
+        # Возвращаем None, так как получить Response не удалось
+        return None
+
+    return wrapper
+
+
+@fallback_head_DLQ
+async def check_single_url(
+    session: aiohttp.ClientSession, url_dict: Dict
+) -> Optional[Dict[str, Optional[str]]]:
+    """
+    Функция  которая возвращает ответ в виде обьекта response по конкретно одной ссылке excel
+    """
+
+    url_excel = url_dict.get("file_url", None)
+
+    if not url_excel:
+        return None
+
+    async with session.head(url_excel, allow_redirects=True) as response:
+        response.raise_for_status()
+
+        ETag = response.headers.get("ETag", "")
+        Last_Modified = response.headers.get("Last-Modified", "")
+        Content_Length = response.headers.get("Content-Length", "")
+
+        # Если хотя бы один имеет значение то не отправляем в DLQ
+        has_valid_headers = (
+            bool(ETag and ETag.strip())
+            or bool(Last_Modified and Last_Modified.strip())
+            or bool(Content_Length and Content_Length.strip())
+        )
+
+        url_dict["Etag"] = ETag
+        url_dict["Last_Modified"] = Last_Modified
+        url_dict["Content-Length"] = Content_Length
+
+        if not has_valid_headers:
+            # TODO: Как то добавить в DLQ
+            # Впринципе можно это и в декораторе сделать, проверкой result на None
+            return None
+        else:
+            return url_dict
+
+
+async def parse_head_info(session: aiohttp.ClientSession, parsed_data: List[Dict]):
+    """
+    Принимает спаршенные из HTML ссылки на эксель файлы
+    и делает по каждой из них HEAD-запрос, что бы в каждый словарь ссылки
+    добавить поля "Etag" и "Last-Modified"
+    """
+
+    def chunker(items: List[Dict], slice_size: int = BATCH_SIZE):
+        for position in range(0, len(items), slice_size):
+            yield items[position : position + slice_size]
+
+    sucsess_src = 0
+    failed_src = 0
+
+    result = []
+
+    for slice in chunker(parsed_data):
+        task_queue = [check_single_url(session, url_dict) for url_dict in slice]
+
+        batch_result = await asyncio.gather(*task_queue)
+
+        for url_result in batch_result:
+            if not url_result:
+                failed_src += 1  # ХЗ
+                continue
+            sucsess_src += 1  # ХЗ
+            result.append(url_result)
+
+        jitter = random.uniform(0.5, 1.5)
+
+        await asyncio.sleep(jitter)
+
+    return result
+
+
+async def process_schedules_to_redis(parsed_data: List[Dict]):
+    """
+    Записывает расписания в Redis и логирует изменения.
+    Сравнивает новые данные (ETag, Last-Modified) с кэшем для выявления обновлений.
+    """
     new_files_count = 0
     updated_files_count = 0
 
     for item in parsed_data:
-        key = item["composite_key"]
+        key = item.get("composite_key")
+        if not key:
+            continue
 
-        # Конвертируем словарь в JSON-строку для хранения в Redis
-        item_json = json.dumps(item, ensure_ascii=False)
+        # Пытаемся достать старую запись из Redis
+        existing_item_str = await redis_pool.hget(SCHEDULES_KEY, key)
 
-        # Проверяем, есть ли уже такой ключ в кэше
-        exists = await r.hexists(SCHEDULES_KEY, key)
-
-        if not exists:
-            # Новый файл, которого раньше не было
+        if not existing_item_str:
+            # СЦЕНАРИЙ 1: Абсолютно новый файл (раньше этого ключа не было)
             new_files_count += 1
-            await r.hset(SCHEDULES_KEY, key, item_json)
-            # В будущем: await push_to_redis_streams(item)
+
+            item_json = json.dumps(item, ensure_ascii=False)
+            await redis_pool.hset(SCHEDULES_KEY, key, item_json)
+
+            # TODO: Пуш в очередь Downloader'а
+            # await redis_pool.lpush(DOWNLOADER_QUEUE, item_json)
 
         else:
-            # TODO: Здесь в будущем будет логика проверки ETag/Last-Modified через HEAD-запрос.
-            # Если ETag изменился - обновим запись в Redis и пушнем в очередь.
-            # Пока что просто считаем, что мы его "проверили" и он не изменился.
-            pass
+            # СЦЕНАРИЙ 2: Файл уже есть в базе. Нужно сравнить на изменения.
+            existing_item = json.loads(existing_item_str)
+            is_changed = False
+
+            # Проверяем все возможные маркеры изменений:
+
+            # 1. Изменилась сама ссылка (админ удалил старый файл и залил новый с другим именем)
+            if item.get("file_url") != existing_item.get("file_url"):
+                is_changed = True
+
+            # 2. Изменился ETag (самый надежный маркер)
+            elif item.get("Etag") and item.get("Etag") != existing_item.get("Etag"):
+                is_changed = True
+
+            # 3. Изменилась дата модификации (запасной вариант)
+            elif item.get("Last_Modified") and item.get(
+                "Last_Modified"
+            ) != existing_item.get("Last_Modified"):
+                is_changed = True
+
+            # 4. Изменился размер файла (фоллбэк, если сервер не отдал ни ETag, ни дату)
+            elif item.get("Content-Length") and item.get(
+                "Content-Length"
+            ) != existing_item.get("Content-Length"):
+                is_changed = True
+
+            # Если обнаружили изменения — обновляем кэш и кидаем задачу на скачивание
+            if is_changed:
+                updated_files_count += 1
+
+                item_json = json.dumps(item, ensure_ascii=False)
+                await redis_pool.hset(SCHEDULES_KEY, key, item_json)
+
+                # TODO: Пуш в очередь Downloader'а
+                # await redis_pool.lpush(DOWNLOADER_QUEUE, item_json)
 
     logger.info(
-        f"Обработано расписаний: {len(parsed_data)}. Новых добавлено в кэш: {new_files_count}."
+        f"Скан завершен. Всего файлов: {len(parsed_data)}. "
+        f"Новых: {new_files_count}. Обновленных: {updated_files_count}."
     )
