@@ -23,7 +23,7 @@ compile_commands.json
 CMakeCache.txt
 CMakeOutput.log
 __pycache__
-# === Настройки редакторов и ОС (на будущее) ===
+# === Настройки редакторов и ОС  ===
 .vscode/
 .idea/
 .DS_Store
@@ -31,3 +31,29 @@ venv/
 .venv/
 # === Игнорим конфиги для питона ===
 .env
+
+#INFO: ========== FRONTEND =============
+# === Сборка ===
+dist
+dist-ssr
+dev-dist/
+
+# === Логи ===
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# === Переменные окружения ===
+.env.local
+.env.*.local
+
+# === Редакторы и ОС ===
+.vscode
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

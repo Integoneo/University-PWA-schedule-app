@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* === ГЛОБАЛЬНАЯ БЛОКИРОВКА СКРОЛЛА === */
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden; /* Жестко обрубаем выход за границы */
+  overscroll-behavior: none; /* Убиваем "резинку" и pull-to-refresh на мобилках */
+  background-color: #020617; /* Подставляем цвет slate-950, чтобы фон не моргал белым при загрузке */
+}

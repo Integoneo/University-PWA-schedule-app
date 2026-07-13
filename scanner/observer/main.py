@@ -3,7 +3,6 @@ import aiohttp
 import bs4
 import json
 import logging
-import redis.asyncio as aioredis
 from time import time
 from utils import (
     parse_and_count_schedule,
@@ -11,6 +10,7 @@ from utils import (
     parse_head_info,
     process_schedules_to_redis,
 )
+from shared import DOMStructureChangedError
 
 # Базовые настройки логирования
 logging.basicConfig(
@@ -19,12 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger("Observer")
 
 # TODO: Придумать как вынести это в отдельный настроечный файл
-REDIS_URL = "redis://localhost:6379/0"
-STATS_KEY = "observer:stats:last_run"
-SCHEDULES_KEY = "observer:schedules"
 
-# Порог аномалии: падение количества тегов больше чем на X процентов
-ANOMALY_THRESHOLD_PERCENT = 30.0
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
@@ -35,17 +30,10 @@ HEADERS = {
 }
 
 
-class DOMStructureChangedError(Exception):
-    pass
-
-
 async def main():
     START_TIME = time()
 
     logger.info("Запуск Observer...")
-
-    # 1. Подключаемся к Redis
-    r = aioredis.Redis.from_url(REDIS_URL)
 
     # Отключаем проверку SSL для aiohttp
     conn = aiohttp.TCPConnector(ssl=False)
@@ -69,25 +57,22 @@ async def main():
 
                 # 3. Проверка на аномалии (Sanity Check)
                 # Если будет выброшен DOMStructureChangedError, скрипт прервется и до сохранения данных не дойдет
-                await check_anomaly_and_save_stats(r, current_stats)
+                await check_anomaly_and_save_stats(current_stats)
 
                 parsed_data = await parse_head_info(session, parsed_data)
 
+                # 4. Обработка и сохранение данных в Redis
                 await process_schedules_to_redis(parsed_data)
 
-                pretty_json = json.dumps(parsed_data, indent=4, ensure_ascii=False)
+                dumped_data = [item.model_dump(by_alias=True) for item in parsed_data]
+                pretty_json = json.dumps(dumped_data, indent=4, ensure_ascii=False)
                 logger.info(f"Получены данные:\n{pretty_json}")
                 logging.info(f"Время работы: {time() - START_TIME}")
-
-                # 4. Обработка и сохранение данных в Redis
-                # await process_schedules_to_redis(r, parsed_data)
 
     except DOMStructureChangedError as e:
         logger.critical(f"РАБОТА ОСТАНОВЛЕНА: {e}")
     except Exception as e:
         logger.error(f"Непредвиденная ошибка: {e}")
-    finally:
-        await r.aclose()  # Закрываем соединение с Redis
 
 
 if __name__ == "__main__":

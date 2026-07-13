@@ -10,7 +10,20 @@ import logging
 import json
 
 
-from redis_db import redis_pool
+from shared import (
+    CheckedURL,
+    redis_pool,
+    NotCheckedURL,
+    InstituteSelectors,
+    THRESHOLDS,
+    STATS_KEY,
+    SCHEDULES_KEY,
+    EXCEL_SRC_DLQ,
+    BAN_TIME,
+    BATCH_SIZE,
+    DOWNLOADER_QUEUE,
+    DOMStructureChangedError,
+)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -18,51 +31,9 @@ logging.basicConfig(
 logger = logging.getLogger("Observer")
 
 
-class InstituteSelectors:
-    MAIN_CONTAINER = "contentmain"
-    BLOCK_INST = "students-schedule-inst"
-    BLOCK_IGNORE = "students-schedule-rasp"
-    INFO_ROW = "logo-row"
-    LOGO = "logo-schedule"
-    NAME = "name-schedule"
-    ACCORDION_ITEM = "accordion-item"
-    ACCORDION_BTN = "accordion-button"
-    DOCUMENT = "document"
-    GRAPH_WRAPPER = "graph"
-    ICONS = "icons"
-    FILES = "files"
-
-
-# INFO: КОРТЕЖИ КОТОРЫЕ Я ТУТ РАСПИСАЛ - РАСШИФРОВКА
-# Tuple({True - срабатываение по % False по количеству}, {процентаж/количество})
-THRESHOLDS = {
-    "main_containers": (False, 1),
-    "institutes": (False, 1),
-    "logos": (True, 100.0),
-    "study_forms": (True, 30.0),
-    "valid_files": (True, 30.0),
-    "office_views": (True, 30.0),
-}
-
-
-# TODO: Придумать как вынести это в отдельный настроечный файл
-STATS_KEY = "observer:stats:last_run"
-SCHEDULES_KEY = "observer:schedules"
-
-EXCEL_SRC_DLQ = "observer:DLQ:head_requests"
-BAN_TIME = 1200  # Ссылки по которым не прошли head запросы, банятся на 20 минут
-
-BATCH_SIZE = 5
-
-
-# TODO: В будущем вынести это в отдельный файл для кастомных ошибок
-class DOMStructureChangedError(Exception):
-    pass
-
-
 def parse_and_count_schedule(
     soup: bs4.BeautifulSoup, base_url: str = "https://rguk.ru"
-) -> Tuple[Dict[str, int], List[Dict]]:
+) -> Tuple[Dict[str, int], List[NotCheckedURL]]:
     """Парсит страницу, собирает метрики и формирует плоский список словарей для Redis."""
     stats = {
         "main_containers": 0,
@@ -188,17 +159,17 @@ def parse_and_count_schedule(
                     # Названия файла(обычно там пишут например "1 курс")
                     composite_key = f"{inst_name} | {study_form} | {file_title}"
 
-                    results.append(
-                        {
-                            "composite_key": composite_key,
-                            "file_title": file_title,
-                            "institution": inst_name,
-                            "study_form": study_form,
-                            "file_url": file_url,
-                            "view_url": view_url,
-                            "logo_url": logo_url,
-                        }
+                    url_object = NotCheckedURL(
+                        composite_key=composite_key,
+                        file_title=file_title,
+                        institute=inst_name,
+                        study_form=study_form,
+                        file_url=file_url,
+                        view_url=view_url,
+                        logo_url=logo_url,
                     )
+
+                    results.append(url_object)
 
     if stats["institutes"] > 0 and stats["valid_files"] == 0:
         raise DOMStructureChangedError(
@@ -208,20 +179,14 @@ def parse_and_count_schedule(
     return stats, results
 
 
-async def check_anomaly_and_save_stats(
-    r, current_stats: dict
-):  # type hint: r: aioredis.Redis
+async def check_anomaly_and_save_stats(current_stats: dict):
     """Сверяет текущие метрики с прошлыми из Redis. Если всё ок - перезаписывает."""
 
     # Пытаемся получить прошлые метрики
-    past_stats_raw = await r.hgetall(STATS_KEY)
+    past_stats_raw = await redis_pool.hgetall(STATS_KEY)
 
     if past_stats_raw:
-        # Redis возвращает байты и для ключей, и для значений (например b'140').
-        # Декодируем ключ в строку, а значение в строку и затем в int.
-        past_stats = {
-            k.decode("utf-8"): int(v.decode("utf-8")) for k, v in past_stats_raw.items()
-        }
+        past_stats = {k: int(v) for k, v in past_stats_raw.items()}
         logger.info(f"Прошлые метрики из Redis: {past_stats}")
 
         is_anomalous = False
@@ -276,7 +241,7 @@ async def check_anomaly_and_save_stats(
         logger.info("Прошлые метрики не найдены. Это первый запуск (Холодный старт).")
 
     # Если всё хорошо (нет критических аномалий или первый запуск) — сохраняем новые метрики
-    await r.hset(STATS_KEY, mapping=current_stats)
+    await redis_pool.hset(STATS_KEY, mapping=current_stats)
     logger.info("Метрики успешно сохранены в Redis.")
 
 
@@ -285,11 +250,16 @@ def fallback_head_DLQ(func):
     async def wrapper(*args, **kwargs):
 
         # 1. Легкое извлечение URL
-        url_dict = kwargs.get("url_dict")
-        if not url_dict and len(args) >= 2:
-            url_dict = args[1]
+        url_obj = kwargs.get("url_obj")
+        if not url_obj and len(args) >= 2:
+            url_obj = args[1]
 
-        url = url_dict.get("file_url") if url_dict else None
+        url = None
+
+        if url_obj is None:
+            return None
+
+        url = getattr(url_obj, "file_url", None)
 
         if not url:
             # Если URL вообще не пришел, даже не пытаемся стучаться
@@ -314,14 +284,14 @@ def fallback_head_DLQ(func):
                 # Время вышло. Выпускаем из карантина, но запоминаем прошлые ошибки
                 base_count_attempt = len(dlq_state.get("attempts", []))
         else:
-            dlq_state = {"meta_info": url_dict, "attempts": []}
+            dlq_state = {"meta_info": url_obj.model_dump(), "attempts": []}
 
         # 3. БОЕВОЙ ЦИКЛ (3 попытки)
         for i in range(1, 4):
             current_attempt = base_count_attempt + i
 
             try:
-                result: Optional[Dict[str, Optional[str]]] = await func(*args, **kwargs)
+                result: Optional[NotCheckedURL] = await func(*args, **kwargs)
 
                 if result is None:
                     raise Exception("Сервер ответил но все заголовки оказались пустыми")
@@ -380,13 +350,13 @@ def fallback_head_DLQ(func):
 
 @fallback_head_DLQ
 async def check_single_url(
-    session: aiohttp.ClientSession, url_dict: Dict
-) -> Optional[Dict[str, Optional[str]]]:
+    session: aiohttp.ClientSession, url_obj: NotCheckedURL
+) -> Optional[CheckedURL]:
     """
     Функция  которая возвращает ответ в виде обьекта response по конкретно одной ссылке excel
     """
 
-    url_excel = url_dict.get("file_url", None)
+    url_excel = url_obj.file_url
 
     if not url_excel:
         return None
@@ -405,36 +375,40 @@ async def check_single_url(
             or bool(Content_Length and Content_Length.strip())
         )
 
-        url_dict["Etag"] = ETag
-        url_dict["Last_Modified"] = Last_Modified
-        url_dict["Content-Length"] = Content_Length
-
         if not has_valid_headers:
-            # TODO: Как то добавить в DLQ
-            # Впринципе можно это и в декораторе сделать, проверкой result на None
+            # HACK: Отправляем в DLQ
             return None
         else:
-            return url_dict
+            result = CheckedURL(
+                **url_obj.model_dump(),
+                ETag=ETag,
+                LastModified=Last_Modified,
+                ContentLength=Content_Length,
+            )
+
+            return result
 
 
-async def parse_head_info(session: aiohttp.ClientSession, parsed_data: List[Dict]):
+async def parse_head_info(
+    session: aiohttp.ClientSession, parsed_data: List[NotCheckedURL]
+) -> List[CheckedURL]:
     """
     Принимает спаршенные из HTML ссылки на эксель файлы
     и делает по каждой из них HEAD-запрос, что бы в каждый словарь ссылки
     добавить поля "Etag" и "Last-Modified"
     """
 
-    def chunker(items: List[Dict], slice_size: int = BATCH_SIZE):
+    def chunker(items: List[NotCheckedURL], slice_size: int = BATCH_SIZE):
         for position in range(0, len(items), slice_size):
             yield items[position : position + slice_size]
 
     sucsess_src = 0
     failed_src = 0
 
-    result = []
+    result: List[CheckedURL] = []
 
     for slice in chunker(parsed_data):
-        task_queue = [check_single_url(session, url_dict) for url_dict in slice]
+        task_queue = [check_single_url(session, url_obj) for url_obj in slice]
 
         batch_result = await asyncio.gather(*task_queue)
 
@@ -452,7 +426,7 @@ async def parse_head_info(session: aiohttp.ClientSession, parsed_data: List[Dict
     return result
 
 
-async def process_schedules_to_redis(parsed_data: List[Dict]):
+async def process_schedules_to_redis(parsed_data: List[CheckedURL]):
     """
     Записывает расписания в Redis и логирует изменения.
     Сравнивает новые данные (ETag, Last-Modified) с кэшем для выявления обновлений.
@@ -461,9 +435,7 @@ async def process_schedules_to_redis(parsed_data: List[Dict]):
     updated_files_count = 0
 
     for item in parsed_data:
-        key = item.get("composite_key")
-        if not key:
-            continue
+        key = item.composite_key
 
         # Пытаемся достать старую запись из Redis
         existing_item_str = await redis_pool.hget(SCHEDULES_KEY, key)
@@ -472,11 +444,12 @@ async def process_schedules_to_redis(parsed_data: List[Dict]):
             # СЦЕНАРИЙ 1: Абсолютно новый файл (раньше этого ключа не было)
             new_files_count += 1
 
-            item_json = json.dumps(item, ensure_ascii=False)
+            item_json = item.model_dump_json(by_alias=True)
             await redis_pool.hset(SCHEDULES_KEY, key, item_json)
 
-            # TODO: Пуш в очередь Downloader'а
-            # await redis_pool.lpush(DOWNLOADER_QUEUE, item_json)
+            await redis_pool.xadd(
+                DOWNLOADER_QUEUE, {"payload": item_json, "type": "lessons"}
+            )
 
         else:
             # СЦЕНАРИЙ 2: Файл уже есть в базе. Нужно сравнить на изменения.
@@ -486,34 +459,35 @@ async def process_schedules_to_redis(parsed_data: List[Dict]):
             # Проверяем все возможные маркеры изменений:
 
             # 1. Изменилась сама ссылка (админ удалил старый файл и залил новый с другим именем)
-            if item.get("file_url") != existing_item.get("file_url"):
+            if item.file_url != existing_item.get("file_url"):
                 is_changed = True
 
             # 2. Изменился ETag (самый надежный маркер)
-            elif item.get("Etag") and item.get("Etag") != existing_item.get("Etag"):
+            elif item.ETag and item.ETag != existing_item.get("ETag"):
                 is_changed = True
 
             # 3. Изменилась дата модификации (запасной вариант)
-            elif item.get("Last_Modified") and item.get(
-                "Last_Modified"
-            ) != existing_item.get("Last_Modified"):
+            elif item.LastModified and item.LastModified != existing_item.get(
+                "Last-Modified"
+            ):
                 is_changed = True
 
             # 4. Изменился размер файла (фоллбэк, если сервер не отдал ни ETag, ни дату)
-            elif item.get("Content-Length") and item.get(
+            elif item.ContentLength and item.ContentLength != existing_item.get(
                 "Content-Length"
-            ) != existing_item.get("Content-Length"):
+            ):
                 is_changed = True
 
             # Если обнаружили изменения — обновляем кэш и кидаем задачу на скачивание
             if is_changed:
                 updated_files_count += 1
-
-                item_json = json.dumps(item, ensure_ascii=False)
+                item_json = item.model_dump_json(by_alias=True)
                 await redis_pool.hset(SCHEDULES_KEY, key, item_json)
 
-                # TODO: Пуш в очередь Downloader'а
-                # await redis_pool.lpush(DOWNLOADER_QUEUE, item_json)
+                # ПУШ В STREAM
+                await redis_pool.xadd(
+                    DOWNLOADER_QUEUE, {"payload": item_json, "type": "lessons"}
+                )
 
     logger.info(
         f"Скан завершен. Всего файлов: {len(parsed_data)}. "
