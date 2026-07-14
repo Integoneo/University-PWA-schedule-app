@@ -44,7 +44,7 @@ class Institute(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
     short_name: str
-    icon_url: Optional[str] = Field(default=None)
+    logo_url: Optional[str] = Field(default=None)
     groups: List["Group"] = Relationship(
         back_populates="institute",
         sa_relationship_kwargs={"order_by": "asc(Group.id)"},
@@ -63,6 +63,7 @@ class Group(SQLModel, table=True):
     start_education_date: date
     end_education_date: date
 
+    view_url: str | None
     institute_id: int = Field(foreign_key="institutes.id")
     institute: Institute = Relationship(back_populates="groups")
     updated_at: datetime = Field(

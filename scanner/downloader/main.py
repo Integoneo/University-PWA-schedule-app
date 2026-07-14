@@ -10,7 +10,7 @@ from time import time
 from functools import wraps
 from aiohttp import ClientSession
 
-from .shared import (
+from shared import (
     redis_pool,
     DOWNLOADER_QUEUE,
     CPP_QUEUE,

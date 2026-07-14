@@ -36,7 +36,8 @@ ParserDictionaries::ParserDictionaries() {
 		// видит внутри множеств мои строки
 
 	EducationalPlaces = {"учебная площадка", "шаболовская", "новокузнецкая", "садовническая", "хибинский",
-						 "площадка №1",		 "площадка №2", "площадка №3",	 "площадка №4",	  "edu.rguk.ru"};
+						 "площадка №1",		 "площадка №2", "площадка №3",	 "площадка №4",	  "edu.rguk.ru",
+						 "учебной площадке", "филиал",		"саульского",	 "козлова"};
 };
 
 // Глобальный объект, доступный отовсюду (const защитит от случайного изменения)
@@ -88,12 +89,12 @@ void checkMap::validateAllheaderColumns(header &currentHeader) {
 
 header findHeader(OpenXLSX::XLWorksheet &groupSchedule) {
 
-	int rowNumberMax = groupSchedule.rowCount();
+	int rowNumberMax = 2000;
 	int columnNumberMax = groupSchedule.columnCount();
 
 	header excelHeader = {.rowMax = rowNumberMax};
 
-	static const re2::RE2 date_reg(R"((\d{2}\.\d{2}\.\d{4})-(\d{2}\.\d{2}\.\d{4}))");
+	static const re2::RE2 date_reg(R"((\d{2}[.\s]\d{2}[.\s]\d{4})\s*-{1,2}\s*(\d{2}[.\s]\d{2}[.\s]\d{4}))");
 	static const re2::RE2 form_reg(R"((очная|заочная|очно-заочная|вечерняя|магистратура)\s+форма)");
 	static const re2::RE2 course_reg(R"((\d+)\s*курс)");
 	static const re2::RE2 group_reg(R"(группа\s+([а-я0-9-]+))");
@@ -144,12 +145,20 @@ header findHeader(OpenXLSX::XLWorksheet &groupSchedule) {
 
 			// Ловим даты
 			if (excelHeader.meta.startDate.empty() && currentColumn.columnName.length() >= 15) {
-				std::string no_spaces = currentColumn.columnName;
-				// Безопасное удаление пробелов (защита от краша на кириллице)
-				std::erase_if(no_spaces, [](unsigned char c) { return std::isspace(c); });
+				// Новая регулярка: ловит И точки, И пробелы, И двойные тире
 
-				// Передаем сразу два указателя для двух скобок
-				re2::RE2::PartialMatch(no_spaces, date_reg, &excelHeader.meta.startDate, &excelHeader.meta.endDate);
+				std::string start_date, end_date;
+
+				// Передаем ОРИГИНАЛЬНУЮ строку, не удаляя пробелы заранее!
+				if (re2::RE2::PartialMatch(currentColumn.columnName, date_reg, &start_date, &end_date)) {
+
+					// Лечим опечатки секретарши: меняем найденные пробелы на точки
+					std::replace(start_date.begin(), start_date.end(), ' ', '.');
+					std::replace(end_date.begin(), end_date.end(), ' ', '.');
+
+					excelHeader.meta.startDate = start_date;
+					excelHeader.meta.endDate = end_date;
+				}
 			}
 			headerTruthMap.validateAllheaderColumns(excelHeader);
 			if (excelHeader.readyHeader) {

@@ -57,3 +57,7 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Игнорируем папку со скачанными эксель файлами
+
+temp_downloads/

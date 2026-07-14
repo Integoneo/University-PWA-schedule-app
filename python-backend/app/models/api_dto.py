@@ -39,6 +39,7 @@ class LessonPWA(BaseModel):
     type_of_lesson: Optional[str] = None
     classroom: Optional[str] = None
     educational_place: str
+    view_url: Optional[str]
     teachers: List[TeacherPWA]  # Вложенные преподаватели
 
     model_config = ConfigDict(from_attributes=True)
@@ -47,4 +48,3 @@ class LessonPWA(BaseModel):
 class GroupScheduleResponse(BaseModel):
     status: str
     lessons: List[LessonPWA]
-    # Нам не нужен from_attributes здесь, так как мы соберем этот объект руками

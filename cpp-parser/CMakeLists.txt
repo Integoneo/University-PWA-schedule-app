@@ -12,14 +12,13 @@ pkg_check_modules(RE2 REQUIRED re2)
 
 set(OPENXLSX_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
 set(OPENXLSX_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(OPENXLSX_BUILD_DOCS ON CACHE BOOL "" FORCE) # Включаем сборку документации
+set(OPENXLSX_BUILD_DOCS OFF CACHE BOOL "" FORCE) # Включаем сборку документации
 set(REDIS_PLUS_PLUS_BUILD_TEST OFF CACHE BOOL "" FORCE)
 
 
 # --------------- LIBS -----------------------
 add_subdirectory(libs/hiredis)
 
-# === МАГИЯ ДЛЯ ОФФЛАЙН СБОРКИ REDIS-PLUS-PLUS ===
 # 1. Жестко говорим, где лежат заголовочные файлы hiredis (на уровень выше, в папке libs)
 set(HIREDIS_HEADER "${CMAKE_SOURCE_DIR}/libs" CACHE PATH "" FORCE)
 
@@ -50,6 +49,5 @@ target_link_libraries(worker OpenXLSX ${RE2_LIBRARIES} redis++)
 add_custom_target(run
     COMMAND ./worker
     DEPENDS worker
-    # Исправлена опечатка в слове DIRECTORY
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/exec
 )

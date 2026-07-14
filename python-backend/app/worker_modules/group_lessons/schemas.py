@@ -27,7 +27,7 @@ DAY_MAPPING = {
 
 
 class LessonSchema(BaseModel):
-    day_of_week: int  # Обрати внимание: мы ожидаем int в итоге
+    day_of_week: int
     start_time: time
     end_time: time
     educational_place: str
@@ -37,6 +37,17 @@ class LessonSchema(BaseModel):
     type_of_lesson: str = ""
     teachers: List[str] = Field(default_factory=list)
     number_of_lesson: Optional[int] = None
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def fix_short_time(cls, v):
+        if isinstance(v, str) and v.strip():
+            v = v.strip()
+            parts = v.split(":")
+            # Если время "9:15", делаем "09:15"
+            if len(parts) == 2 and len(parts[0]) == 1:
+                return f"0{v}"
+        return v
 
     # Учим Pydantic конвертировать строку "ПН" в int 0 ПЕРЕД валидацией
     @field_validator("day_of_week", mode="before")
@@ -60,22 +71,24 @@ class LessonSchema(BaseModel):
 
 class SchedulePayloadSchema(BaseModel):
     # Ожидаем сырую строку из JSON, например "институт мехатроники..."
-    institute: str = Field(alias="Institute")
+    institute: str = Field(alias="institute")
 
     # Этого поля НЕТ в JSON! Мы сгенерируем его сами внутри валидатора
     institute_short_name: str = ""
 
-    group: str = Field(alias="Group")
+    group: str = Field(alias="group")
 
     # Проглотит отсутствие поля или подставит None
-    course: Optional[str] = Field(default=None, alias="Course")
-    education_form: Optional[str] = Field(default=None, alias="Education-form")
+    course: Optional[str] = Field(default=None, alias="course")
+    education_form: Optional[str] = Field(default=None, alias="education-form")
 
-    start_education_date: date = Field(alias="Start-education-date")
-    end_education_date: date = Field(alias="End-education-date")
+    start_education_date: date = Field(alias="start-education-date")
+    end_education_date: date = Field(alias="end-education-date")
 
     # ❗️ Ключ обязан быть в JSON, и в списке должна быть минимум 1 пара
     lessons: List[LessonSchema] = Field(min_length=1)
+    view_url: str = ""
+    logo_url: str = ""
 
     @field_validator("start_education_date", "end_education_date", mode="before")
     @classmethod
