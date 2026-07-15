@@ -89,7 +89,7 @@ void checkMap::validateAllheaderColumns(header &currentHeader) {
 
 header findHeader(OpenXLSX::XLWorksheet &groupSchedule) {
 
-	int rowNumberMax = 2000;
+	int rowNumberMax = 80;
 	int columnNumberMax = groupSchedule.columnCount();
 
 	header excelHeader = {.rowMax = rowNumberMax};

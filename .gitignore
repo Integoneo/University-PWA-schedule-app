@@ -61,3 +61,5 @@ pnpm-debug.log*
 # Игнорируем папку со скачанными эксель файлами
 
 temp_downloads/
+archive/
+dlq/

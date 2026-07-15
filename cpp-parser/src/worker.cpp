@@ -2,34 +2,38 @@
 #include "Utils.hpp"
 #include "XLSheet.hpp"
 #include <OpenXLSX.hpp>
-#include <atomic>
-#include <chrono>
-#include <csignal>
+#include <filesystem>
 #include <nlohman-json/json.hpp>
 #include <re2/re2.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <sw/redis++/redis++.h>
-#include <thread>
-#include <utility>
 #include <vector>
 using namespace std;
 using json = nlohmann::json;
 using namespace OpenXLSX;
+namespace fs = std::filesystem;
 
-std::atomic<bool> keep_running(true);
-
-void signal_handler(int signal) {
-	if (signal == SIGINT) {
-		// Писать тяжелые логи прямо внутри обработчика сигналов небезопасно (вызовет undefined behavior),
-		// поэтому мы просто меняем флаг и выходим из него.
-		keep_running = false;
-	}
-}
+namespace config {
+inline const fs::path archive_directory_path = "/home/integoneo/MyProjects/University-schedule-app/archive";
+inline const fs::path dlq_directory_path = "/home/integoneo/MyProjects/University-schedule-app/dlq/schedule_lessons";
+inline const string REDIS_DLQ_KEY = "parser:dlq";
+} // namespace config
 
 // Функция парсинга одного файла. Принимает путь, метаданные из Python и ссылку на пулл Redis
 void process_excel_file(const string &filepath, const json &python_meta, sw::redis::Redis &redis) {
+
+	vector<string> successful_lists;
+	// Буду сюда названия листов которые имели логические ошибки в своей структуре и отправлять эти листы в
+	// DLQ
+	bool file_has_trash_lists = false;
+	// Если мусорных листов не было, удаляем файл без зазрения совести
+
+	string href = safe_get_str(python_meta, "view_url", "URL_NOT_FOUND");
+
+	copy_file_to_new_directories(filepath, config::archive_directory_path, true, href);
+
 	XLDocument doc;
 	doc.open(filepath);
 
@@ -38,6 +42,8 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 	for (size_t i = 1; i <= doc.workbook().worksheetCount(); ++i) {
 		auto wks = doc.workbook().worksheet(i);
 
+		bool list_has_human_errors = false;
+
 		string checkNameList = toLowerUTF8Cyrillic(wks.name());
 
 		if (checkNameList.find("майнор") != std::string::npos || checkNameList.find("профмодул") != std::string::npos ||
@@ -45,6 +51,7 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 			spdlog::warn("Пропускаем лист с минорами,профмодулями и прочий мусор, парсинг этих расписаний под "
 						 "вопросом, название листа: '{}'",
 						 wks.name());
+			successful_lists.emplace_back(wks.name()); // Будем эти мусорные листы пока что просто скипать
 			continue;
 		}
 
@@ -52,6 +59,7 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 
 		if (!checkedHead.readyHeader) {
 			spdlog::warn("Пропуск листа '{}': Нестандартная структура таблицы (шапка не найдена)", wks.name());
+			file_has_trash_lists = true;
 			continue; // Сразу прыгаем к следующему листу, не трогаем JSON и Redis!
 		}
 
@@ -60,13 +68,6 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 		} else {
 			instituteState = checkedHead.meta.institute;
 		}
-
-		auto safe_get_str = [](const json &j, const std::string &key, const std::string &def) -> std::string {
-			if (j.contains(key) && j[key].is_string()) {
-				return j[key].get<std::string>();
-			}
-			return def;
-		};
 
 		json root;
 
@@ -143,16 +144,34 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 						evenLesson[SR::IndexNames[SR::Index::educationalPlaceEven]] =
 							wideScan.rowObject.storage[SR::Index::educationalPlaceEven];
 
-						bool oddPayLoadFlag = false;
-						bool evenPayLoadFlag = false;
+						if (oddLesson[SR::IndexNames[SR::Index::educationalPlaceOdd]] == "" &&
+							evenLesson[SR::IndexNames[SR::Index::educationalPlaceEven]] == "") {
+							list_has_human_errors = true;
+							file_has_trash_lists = true;
+							spdlog::warn("У пары не найдена учебная площадка - логическая ошибка");
+							// Очищаем уже собранные пары, этот лист мы в БД не пустим!
+							root["lessons"].clear();
+							break;
+						}
+
+						bool odd_has_discipline = false;
+						bool odd_has_other_text = false;
+
+						bool even_has_discipline = false;
+						bool even_has_other_text = false;
 
 						for (int i = 0; i < SR::Index::EndOfCommonCells; i++) {
 							string s = wideScan.rowObject.storage[i];
 							bool stringIsntEmpty = !s.empty();
 
 							if (i >= SR::Index::oddInfoStart && i <= SR::Index::oddInfoEnd) {
-								if (stringIsntEmpty)
-									oddPayLoadFlag = true;
+								if (stringIsntEmpty) {
+									if (i == SR::Index::lessonOdd) {
+										odd_has_discipline = true;
+									} else {
+										odd_has_other_text = true;
+									}
+								}
 
 								if (SR::IndexNames[i] == "teachers") {
 									oddLesson[SR::IndexNames[i]] = extractToJsonArray(s, teachers_reg);
@@ -161,8 +180,13 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 								}
 
 							} else if (i >= SR::Index::evenInfoStart && i <= SR::Index::evenInfoEnd) {
-								if (stringIsntEmpty)
-									evenPayLoadFlag = true;
+								if (stringIsntEmpty) {
+									if (i == SR::Index::lessonEven) {
+										even_has_discipline = true;
+									} else {
+										even_has_other_text = true;
+									}
+								}
 
 								if (SR::IndexNames[i] == "teachers") {
 									evenLesson[SR::IndexNames[i]] = extractToJsonArray(s, teachers_reg);
@@ -190,9 +214,26 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 							}
 						}
 
-						if (oddPayLoadFlag)
+						// === ПРОВЕРКА НА ШИЗУ ДЕКАНАТА (АНОМАЛИЮ) ===
+						if ((odd_has_other_text && !odd_has_discipline) ||
+							(even_has_other_text && !even_has_discipline)) {
+
+							list_has_human_errors = true;
+
+							file_has_trash_lists = true;
+							spdlog::warn("АНОМАЛИЯ: Группа {}. Висящая ячейка без названия пары! Отправляем в DLQ.",
+										 wks.name());
+
+							// Очищаем уже собранные пары, этот лист мы в БД не пустим!
+							root["lessons"].clear();
+
+							// Выходим из цикла сканирования строк (нет смысла парсить битый лист дальше)
+							break;
+						}
+
+						if (odd_has_discipline)
 							root["lessons"].push_back(std::move(oddLesson));
-						if (evenPayLoadFlag)
+						if (even_has_discipline)
 							root["lessons"].push_back(std::move(evenLesson));
 					}
 				}
@@ -201,18 +242,87 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 
 		// === ИНТЕГРАЦИЯ С REDIS (ОТПРАВЛЯЕМ ГОТОВОЕ РАСПИСАНИЕ) ===
 		// Используем очередь "db:parsed_lessons" для готовых данных
-		string payload = root.dump(4); // TODO: Убрать 4 для продакшена
-		vector<pair<string, string>> redis_msg = {{"payload", payload}, {"type", "lessons"}};
-		redis.xadd("db:parsed_lessons", "*", redis_msg.begin(), redis_msg.end());
+		if (list_has_human_errors) {
 
-		spdlog::info("Лист '{}' успешно отправлен. Институт: '{}', Курс: '{}', Группа: '{}'", wks.name(),
-					 root["institute"].get<std::string>(), root["course"].get<std::string>(),
-					 root["group"].get<std::string>());
+			spdlog::warn("Лист '{}' Имеет логические ошибки. Институт: '{}', Курс: '{}', Группа: '{}'", wks.name(),
+						 root["institute"].get<std::string>(), root["course"].get<std::string>(),
+						 root["group"].get<std::string>());
+
+		} else {
+
+			successful_lists.emplace_back(wks.name());
+
+			string payload = root.dump(4); // TODO: Убрать 4 для продакшена
+			vector<pair<string, string>> redis_msg = {{"payload", payload}, {"type", "lessons"}};
+			redis.xadd("db:parsed_lessons", "*", redis_msg.begin(), redis_msg.end());
+
+			spdlog::info("Лист '{}' успешно отправлен. Институт: '{}', Курс: '{}', Группа: '{}'", wks.name(),
+						 root["institute"].get<std::string>(), root["course"].get<std::string>(),
+						 root["group"].get<std::string>());
+		}
 	}
 
-	doc.close();
-}
+	if (file_has_trash_lists) {
+		// Сначала удаляем успешно прошедшие листы
+		for (const auto &s_name : successful_lists) {
+			try {
+				doc.workbook().deleteSheet(s_name);
+			} catch (...) {
+				spdlog::warn("Ошибка удаления листа");
+			} // Безопасное игнорирование ошибок OpenXLSX
+		}
 
+		// 1. Сохраняем файл прямо там, где он открыт (в /dev/shm)
+		doc.save();
+		// 2. Закрываем документ ДО манипуляций с файлами
+		doc.close();
+
+		std::error_code ec;
+		fs::create_directories(config::dlq_directory_path, ec);
+
+		fs::path filename = fs::path(filepath).filename();
+		fs::path dlq_path = config::dlq_directory_path / filename;
+
+		// 3. Копируем сохраненный файл из /dev/shm в папку DLQ (С ПЕРЕЗАПИСЬЮ!)
+		fs::copy_file(filepath, dlq_path, fs::copy_options::overwrite_existing, ec);
+
+		if (ec) {
+			spdlog::error("Ошибка копирования в DLQ: {}", ec.message());
+		} else {
+			json dlq_payload;
+			dlq_payload["filepath"] = dlq_path.string();
+			dlq_payload["meta_info"] = python_meta;
+
+			// Хэш который читает питоновский микроскрипт
+			redis.hset(config::REDIS_DLQ_KEY, filename.string(), dlq_payload.dump());
+
+			spdlog::info("DLQ файл обновлен и записан в HASH {}: {}", config::REDIS_DLQ_KEY, dlq_path.string());
+		}
+	} else {
+		// Если ошибок нет, просто закрываем
+		doc.close();
+
+		// АВТО-ОЧИСТКА DLQ! Если файл пришел из ретрая и вылечился на 100%
+		fs::path filename = fs::path(filepath).filename();
+		fs::path dlq_path = config::dlq_directory_path / filename;
+		std::error_code check_ec;
+
+		if (fs::exists(dlq_path, check_ec)) {
+			// Удаляем файл с диска
+			fs::remove(dlq_path, check_ec);
+			// Удаляем запись из хэша Redis
+			redis.hdel(config::REDIS_DLQ_KEY, filename.string());
+			spdlog::info("Файл {} полностью ВЫЛЕЧЕН! Удален из карантина и Redis.", filename.string());
+		}
+	}
+
+	// В самом конце удаляем временный файл из /dev/shm
+	std::error_code remove_ec;
+	fs::remove(filepath, remove_ec);
+	if (remove_ec) {
+		spdlog::error("Не удалось удалить временный файл {}: {}", filepath, remove_ec.message());
+	}
+}
 int main() {
 	// 1. Инициализация spdlog
 	auto logger = spdlog::stdout_color_mt("console");
@@ -220,8 +330,6 @@ int main() {
 	spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e [%^%l%$] %v");
 
 	spdlog::info("Запуск C++ Парсера (Worker)...");
-
-	std::signal(SIGINT, signal_handler);
 
 	// 2. Инициализация Redis (Одно соединение на весь скрипт!)
 	auto redis = sw::redis::Redis("tcp://127.0.0.1:6379");
@@ -243,7 +351,7 @@ int main() {
 	spdlog::info("Ожидание файлов в очереди {}...", stream_name);
 
 	// --- САМ ЦИКЛ ---
-	while (keep_running) {
+	while (true) {
 		try {
 			// Создаем пустой вектор для ответов
 			std::vector<StreamMsgs> reply;
@@ -295,13 +403,9 @@ int main() {
 			}
 		} catch (const std::exception &e) {
 			spdlog::error("Критическая ошибка (Краш при парсинге): {}", e.what());
-			// TODO: Можно здесь добавить удаление битого файла с диска
 			std::this_thread::sleep_for(std::chrono::seconds(3));
 		}
 	}
-
-	spdlog::warn("Получен сигнал прерывания (Ctrl+C)!");
-	spdlog::info("Завершение работы, Пока!");
 
 	return 0;
 }

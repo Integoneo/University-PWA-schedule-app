@@ -64,9 +64,9 @@ async def main():
                 # 4. Обработка и сохранение данных в Redis
                 await process_schedules_to_redis(parsed_data)
 
-                dumped_data = [item.model_dump(by_alias=True) for item in parsed_data]
-                pretty_json = json.dumps(dumped_data, indent=4, ensure_ascii=False)
-                logger.info(f"Получены данные:\n{pretty_json}")
+                # dumped_data = [item.model_dump(by_alias=True) for item in parsed_data]
+                # pretty_json = json.dumps(dumped_data, indent=4, ensure_ascii=False)
+                # logger.info(f"Получены данные:\n{pretty_json}")
                 logging.info(f"Время работы: {time() - START_TIME}")
 
     except DOMStructureChangedError as e:
