@@ -7,6 +7,7 @@ from app.db.init_db import create_db_and_tables, insert_initial_config
 
 # Импортируем нашего воркера
 from worker import main_worker_loop
+from dlq_watcher import dlq_watcher_loop
 
 # Импортируем роутер
 from app.api.router import api_router
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
 
     # 2. Запускаем воркер в фоновом режиме
     worker_task = asyncio.create_task(main_worker_loop())
+    dlq_watcher_task = asyncio.create_task(dlq_watcher_loop())
 
     yield
 
@@ -36,6 +38,7 @@ async def lifespan(app: FastAPI):
 
     # 3. Отправляем сигнал отмены в бесконечный цикл воркера
     worker_task.cancel()
+    dlq_watcher_task.cancel()
 
     # 4. Ждем, пока воркер завершит свои текущие дела (допишет в БД) и остановится
     try:

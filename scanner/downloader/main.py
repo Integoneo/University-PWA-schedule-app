@@ -32,6 +32,14 @@ logger = logging.getLogger("Downloader")
 # Создаем папку для загрузок, если её нет
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "Connection": "keep-alive",
+}
+
 
 def get_dir_size(path=".") -> int:
     """Быстро вычисляет размер всех файлов в папке."""
@@ -143,7 +151,9 @@ async def download_file(
     # Даем серверу до 10 минут на отдачу медленного/большого файла
     timeout = aiohttp.ClientTimeout(total=600)
 
-    async with session.get(file_url, allow_redirects=True, timeout=timeout) as response:
+    async with session.get(
+        file_url, allow_redirects=True, timeout=timeout, headers=HEADERS
+    ) as response:
         response.raise_for_status()
 
         # Пишем файл на диск чанками по 8 КБ (Защита RAM)

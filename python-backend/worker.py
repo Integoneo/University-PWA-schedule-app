@@ -104,7 +104,7 @@ async def main_worker_loop():
                     logger.error(f"Быстрый просмотр файла расписания: {view_url}")
                     debug(e)
                 await r.xack(STREAM_NAME, GROUP_NAME, msg_id)
-                # await r.xdel(STREAM_NAME, msg_id)
+                await r.xdel(STREAM_NAME, msg_id)
 
                 raw_dict = {}
 

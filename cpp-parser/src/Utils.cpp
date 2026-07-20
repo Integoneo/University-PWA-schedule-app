@@ -1,10 +1,16 @@
 #include "Utils.hpp"
+#include "config.hpp"
 #include <OpenXLSX.hpp>
 #include <chrono>
+#include <cstdint>
+#include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <iomanip>
 #include <nlohman-json/json.hpp>
 #include <re2/re2.h>
+#include <redis_wrapper.hpp>
+#include <spdlog/sinks/dup_filter_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -13,6 +19,17 @@
 namespace fs = std::filesystem;
 
 using json = nlohmann::json;
+void init_spdlogger() {
+	auto color_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
+	auto dup_filter = std::make_shared<spdlog::sinks::dup_filter_sink_mt>(std::chrono::hours(2));
+	dup_filter->add_sink(color_sink);
+	auto logger = std::make_shared<spdlog::logger>("console", dup_filter);
+
+	spdlog::register_logger(logger);
+	spdlog::set_default_logger(logger);
+	spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e [%^%l%$] %v");
+}
+
 std::string toLowerUTF8Cyrillic(const std::string &str) {
 	std::string result;
 	result.reserve(str.size()); // Выделяем память заранее для скорости
@@ -121,8 +138,8 @@ std::string getSafeString(uint32_t row, uint32_t col, OpenXLSX::XLWorksheet &wks
 
 		return toLowerUTF8Cyrillic(trimmed);
 
-	} catch (...) {
-		// Ловим любые исключения библиотеки OpenXLSX
+	} catch (std::exception &e) {
+		spdlog::error("Произошла ошибка при форматировании строки в функции getSafeString, \n Детали \n {}", e.what());
 		return "";
 	}
 }
@@ -142,54 +159,114 @@ nlohmann::json extractToJsonArray(const std::string &str, const re2::RE2 &reg) {
 	return result;
 }
 
-bool copy_file_to_new_directories(fs::path source_filepath, fs::path target_dir, bool is_archive,
-								  std::string view_url) {
+// мне нужна функция которая будет записывать файлы и для архива и для dlq
+//  Давай деконструируем требования к работе этой функции, у нас всего 2 случая и общие требования
+//  ===== ОБЩИЕ ТРЕБОВАНИЯ ======
+//  Сначала функция создает папку для записи гарантируя что она:
+//   - Создаст папку только если ее еще нет
+//   - Не перезапишет папку если она уже существует
+//   - гарантирует обработку ошибок с файловой системой
+//   - если возникнут ошибки с файловой системой, то вернет false
+//   - Для копирования должен использоваться только алгоритм
+//     гарантирующий атомарную перезапись файла:
+//        1. Скопировать исходный файл в папку назначения с
+//           называнием temp_filename(skip_existing)
+//        2. Сделать fs::rename: temp_filename -> filename,
+//           тем самым гарантируя атомарность
+//   - При любых проблемах с диском должен писать в свою очередь
+//     filesystem_problem
+//   * при возврате false этой функцией в main цикле нужна логика
+//     обработки этой ошибки, поскольку нельзя пушить этот файл в
+//     DLQ, DLQ яно требует наличия файла по заданному filepath
+//  1 ====== ЗАПИСЬ В АРХИВ =====
+//  Нужно создать директорию archive, создать там папку с датой и не перезаписать уже существующую директорию
+//  Так же нельзя перезаписать файл в архиве если он меньше чем уже существующий файл - это защита от перезаписи
+//  архивных файлов если они пришли из DLQ
+//
+//  2 ====== ЗАПИСЬ ФАЙЛА В АВТОМАТИЗИРОВАННЫЙ DLQ ==========
+//  - Атомарная перезапись через fs::rename
 
-	bool response_is_success = true;
+// Не буду ловить ошибки работы с файловой системой через перегрузки
+// оберну все в один try и буду отправлять в redis hash при проблемами с файловой системой
 
-	// Если нужен архив, точечно модифицируем целевой путь
-	if (is_archive) {
-		auto now = std::chrono::system_clock::now();
-		auto in_time_t = std::chrono::system_clock::to_time_t(now);
-		std::stringstream ss;
-		ss << std::put_time(std::localtime(&in_time_t), "%d.%m.%Y");
-		target_dir /= ss.str(); // Оператор /= склеивает пути на месте
+bool safe_copy_file(const fs::path source_filepath, const fs::path target_dir, bool is_archive, const json &python_meta,
+					std::string &view_url) {
+	try {
+		// 1. Ручная генерация исключения, если исходного файла нет
+		if (!fs::exists(source_filepath)) {
+			throw fs::filesystem_error("Исходный файл не найден", source_filepath,
+									   std::make_error_code(std::errc::no_such_file_or_directory));
+		}
+
+		fs::path final_dir = target_dir;
+		fs::path original_filename = source_filepath.filename();
+
+		// Cобираем имя temp файла (например: temp_schedule.xlsx)
+		fs::path temp_filename = "temp_" + original_filename.string();
+		fs::path final_filepath;
+
+		// 2. Модификация пути для архива и проверка размера
+		if (is_archive) {
+			// === НАДЕЖНЫЙ C-STYLE ПОДХОД ===
+			auto now = std::chrono::system_clock::now();
+			auto in_time_t = std::chrono::system_clock::to_time_t(now);
+
+			std::stringstream ss;
+			ss << std::put_time(std::localtime(&in_time_t), "%d.%m.%Y");
+			final_dir /= ss.str();
+			// ==========================================
+
+			final_filepath = final_dir / original_filename;
+
+			// Защита от перезаписи: если новый файл меньше старого - пропускаем
+			if (fs::exists(final_filepath)) {
+				if (fs::file_size(source_filepath) < fs::file_size(final_filepath)) {
+					return true;
+				}
+			}
+		} else {
+			final_filepath = final_dir / original_filename;
+		}
+
+		fs::path temp_filepath = final_dir / temp_filename;
+
+		// 3. Создаем директории. Выбросит ошибку при отсутствии прав
+		fs::create_directories(final_dir);
+
+		// 4. Копируем во временный файл с ГАРАНТИРОВАННОЙ перезаписью старых огрызков
+		fs::copy_file(source_filepath, temp_filepath, fs::copy_options::overwrite_existing);
+
+		// 5. Атомарное переименование
+		fs::rename(temp_filepath, final_filepath);
+
+	} catch (const fs::filesystem_error &err) {
+		// Ловим конкретно ошибки диска
+
+		spdlog::critical("Ошибка файловой системы: {} | Проблемный путь: {}", err.what(), err.path1().string());
+		spdlog::critical("Ссылка для быстрого просмотра: {}", view_url);
+
+		redis.hset(config::REDIS_ERROR_FILES_DLQ, source_filepath.string(), python_meta.dump());
+		return false;
+
+	} catch (const std::exception &err) {
+		// Fallback для любых других ошибок
+		spdlog::critical("Неожиданная ошибка при записи файла: {}", err.what());
+		redis.hset(config::REDIS_ERROR_FILES_DLQ, source_filepath.string(), view_url);
+		return false;
 	}
 
-	std::error_code ec;
-
-	// Создаем папки
-	fs::create_directories(target_dir, ec);
-
-	if (ec) {
-		response_is_success = false;
-		spdlog::error("Ошибка создания папки {}: {}", target_dir.string(), ec.message());
-		ec.clear(); // Очищаем ошибку перед следующей операцией
-	} else {
-		spdlog::info("Успешно создана папка {}", target_dir.string());
-	}
-
-	// Собираем точный путь к будущему файлу
-	fs::path destination_filepath = target_dir / source_filepath.filename();
-
-	// Копируем только этот файл
-	fs::copy_file(source_filepath, destination_filepath, fs::copy_options::overwrite_existing, ec);
-
-	if (ec) {
-		response_is_success = false;
-		spdlog::error("Не удалось скопировать файл в папку по пути {}: {}", destination_filepath.string(),
-					  ec.message());
-		spdlog::error("Быстрая ссылка для скачивания файла: {}", view_url);
-	} else {
-		spdlog::info("Файл успешно скопирован в папку: {}", destination_filepath.string());
-	}
-
-	return response_is_success;
+	return true;
 }
-
 std::string safe_get_str(const json &j, const std::string &key, const std::string &def) {
 	if (j.contains(key) && j[key].is_string()) {
 		return j[key].get<std::string>();
 	}
 	return def;
+}
+
+void fatal_crash(const std::string &context, const std::string &error_msg) {
+
+	spdlog::critical("ФАТАЛЬНАЯ ОШИБКА! Контекст {} \n Ошибка {}", context, error_msg);
+
+	std::exit(EXIT_FAILURE);
 }

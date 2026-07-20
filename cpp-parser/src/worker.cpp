@@ -1,29 +1,32 @@
 #include "ParserObjects.hpp"
 #include "Utils.hpp"
+#include "XLDocument.hpp"
 #include "XLSheet.hpp"
-#include <OpenXLSX.hpp>
+#include <chrono>
+#include <config.hpp>
+#include <exception>
 #include <filesystem>
 #include <nlohman-json/json.hpp>
 #include <re2/re2.h>
+#include <redis_wrapper.hpp>
+#include <spdlog/sinks/dup_filter_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <sw/redis++/redis++.h>
+#include <thread>
+#include <type_traits>
+#include <unistd.h>
 #include <vector>
 using namespace std;
 using json = nlohmann::json;
 using namespace OpenXLSX;
 namespace fs = std::filesystem;
 
-namespace config {
-inline const fs::path archive_directory_path = "/home/integoneo/MyProjects/University-schedule-app/archive";
-inline const fs::path dlq_directory_path = "/home/integoneo/MyProjects/University-schedule-app/dlq/schedule_lessons";
-inline const string REDIS_DLQ_KEY = "parser:dlq";
-} // namespace config
+// Функция парсинга одного файла. Принимает путь, метаданные из Python
+void process_excel_file(const string &filepath, json &payload, const string msg_id) {
 
-// Функция парсинга одного файла. Принимает путь, метаданные из Python и ссылку на пулл Redis
-void process_excel_file(const string &filepath, const json &python_meta, sw::redis::Redis &redis) {
-
+	json &python_meta = payload["meta_info"];
 	vector<string> successful_lists;
 	// Буду сюда названия листов которые имели логические ошибки в своей структуре и отправлять эти листы в
 	// DLQ
@@ -32,10 +35,30 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 
 	string href = safe_get_str(python_meta, "view_url", "URL_NOT_FOUND");
 
-	copy_file_to_new_directories(filepath, config::archive_directory_path, true, href);
+	bool file_is_fine = safe_copy_file(filepath, config::archive_directory_path, true, python_meta, href);
 
+	// ЕСЛИ ОШИБКА ФАЙЛОВОЙ СИСТЕМЫ ПРИ АРХИВАЦИИ
+	if (!file_is_fine) {
+		spdlog::error("Не удалось скопировать файл в архив: {}", filepath);
+		redis.xdel(config::stream_name, msg_id); // Удаляем из очереди (1-й и единственный раз)
+
+		// Удаляем мусор из /dev/shm
+		std::error_code remove_ec;
+		fs::remove(filepath, remove_ec);
+
+		// ПРЕРЫВАЕМ ФУНКЦИЮ! Дальше код парсинга не пойдет.
+		return;
+	}
 	XLDocument doc;
 	doc.open(filepath);
+
+	string filename = fs::path(filepath).filename();
+
+	// Коробка для сообщения в DLQ
+	vector<string> dlq_msg;
+
+	doc.setProperty(OpenXLSX::XLProperty::LastModifiedBy, "C++");
+	doc.save();
 
 	string instituteState = "";
 
@@ -60,6 +83,8 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 		if (!checkedHead.readyHeader) {
 			spdlog::warn("Пропуск листа '{}': Нестандартная структура таблицы (шапка не найдена)", wks.name());
 			file_has_trash_lists = true;
+			dlq_msg.emplace_back(std::to_string(dlq_msg.size()) +
+								 ". Нестандартная структура таблицы (шапка не найдена)");
 			continue; // Сразу прыгаем к следующему листу, не трогаем JSON и Redis!
 		}
 
@@ -149,6 +174,8 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 							list_has_human_errors = true;
 							file_has_trash_lists = true;
 							spdlog::warn("У пары не найдена учебная площадка - логическая ошибка");
+							dlq_msg.emplace_back(std::to_string(dlq_msg.size()) +
+												 ". У пары не найдена учебная площадка - логическая ошибка");
 							// Очищаем уже собранные пары, этот лист мы в БД не пустим!
 							root["lessons"].clear();
 							break;
@@ -223,6 +250,8 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 							file_has_trash_lists = true;
 							spdlog::warn("АНОМАЛИЯ: Группа {}. Висящая ячейка без названия пары! Отправляем в DLQ.",
 										 wks.name());
+							dlq_msg.emplace_back(std::to_string(dlq_msg.size()) + ". Группа " + wks.name() +
+												 " Висящая ячейка без названия пары!");
 
 							// Очищаем уже собранные пары, этот лист мы в БД не пустим!
 							root["lessons"].clear();
@@ -240,8 +269,6 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 			}
 		}
 
-		// === ИНТЕГРАЦИЯ С REDIS (ОТПРАВЛЯЕМ ГОТОВОЕ РАСПИСАНИЕ) ===
-		// Используем очередь "db:parsed_lessons" для готовых данных
 		if (list_has_human_errors) {
 
 			spdlog::warn("Лист '{}' Имеет логические ошибки. Институт: '{}', Курс: '{}', Группа: '{}'", wks.name(),
@@ -254,7 +281,7 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 
 			string payload = root.dump(4); // TODO: Убрать 4 для продакшена
 			vector<pair<string, string>> redis_msg = {{"payload", payload}, {"type", "lessons"}};
-			redis.xadd("db:parsed_lessons", "*", redis_msg.begin(), redis_msg.end());
+			redis.xadd("db:parsed_lessons", "*", redis_msg);
 
 			spdlog::info("Лист '{}' успешно отправлен. Институт: '{}', Курс: '{}', Группа: '{}'", wks.name(),
 						 root["institute"].get<std::string>(), root["course"].get<std::string>(),
@@ -277,27 +304,25 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 		// 2. Закрываем документ ДО манипуляций с файлами
 		doc.close();
 
-		std::error_code ec;
-		fs::create_directories(config::dlq_directory_path, ec);
+		file_is_fine = safe_copy_file(filepath, config::dlq_directory_path, false, python_meta, href);
 
-		fs::path filename = fs::path(filepath).filename();
-		fs::path dlq_path = config::dlq_directory_path / filename;
+		if (!file_is_fine) {
+			spdlog::error("Не удалось скопировать файл в архив: {}", filepath);
+			redis.xdel(config::stream_name, msg_id);
 
-		// 3. Копируем сохраненный файл из /dev/shm в папку DLQ (С ПЕРЕЗАПИСЬЮ!)
-		fs::copy_file(filepath, dlq_path, fs::copy_options::overwrite_existing, ec);
+			// Удаляем мусор из /dev/shm
+			std::error_code remove_ec;
+			fs::remove(filepath, remove_ec);
 
-		if (ec) {
-			spdlog::error("Ошибка копирования в DLQ: {}", ec.message());
-		} else {
-			json dlq_payload;
-			dlq_payload["filepath"] = dlq_path.string();
-			dlq_payload["meta_info"] = python_meta;
-
-			// Хэш который читает питоновский микроскрипт
-			redis.hset(config::REDIS_DLQ_KEY, filename.string(), dlq_payload.dump());
-
-			spdlog::info("DLQ файл обновлен и записан в HASH {}: {}", config::REDIS_DLQ_KEY, dlq_path.string());
+			// ПРЕРЫВАЕМ ФУНКЦИЮ! Дальше код парсинга не пойдет.
+			return;
 		}
+		payload["msg"] = dlq_msg;
+
+		// Хэш который читает питоновский микроскрипт
+		redis.hset(config::REDIS_DLQ_KEY, filename, payload.dump());
+
+		spdlog::warn("DLQ файл обновлен и записан в HASH {}: {}", config::REDIS_DLQ_KEY, filename);
 	} else {
 		// Если ошибок нет, просто закрываем
 		doc.close();
@@ -323,87 +348,83 @@ void process_excel_file(const string &filepath, const json &python_meta, sw::red
 		spdlog::error("Не удалось удалить временный файл {}: {}", filepath, remove_ec.message());
 	}
 }
+
 int main() {
 	// 1. Инициализация spdlog
-	auto logger = spdlog::stdout_color_mt("console");
-	spdlog::set_default_logger(logger);
-	spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e [%^%l%$] %v");
+	init_spdlogger();
 
 	spdlog::info("Запуск C++ Парсера (Worker)...");
 
-	// 2. Инициализация Redis (Одно соединение на весь скрипт!)
-	auto redis = sw::redis::Redis("tcp://127.0.0.1:6379");
-	string stream_name = "parser:ready_schedules"; // Куда пишет Python
-	string group_name = "cpp_parsers";
-	string consumer_name = "cpp-worker";
+	// 2. Инициализация Redis
 
-	try {
-		redis.xgroup_create(stream_name, group_name, "0", true);
-	} catch (const sw::redis::ReplyError &e) {
-		// Игнорируем BUSYGROUP
-	}
+	redis.ping();
+	redis.xgroup_create(config::stream_name, config::group_name, "0", true);
 
-	// --- ПЕРЕД ЦИКЛОМ ЗАДАЕМ ТИПЫ ДАННЫХ ---
-	using Item = std::pair<std::string, std::string>;
-	using Msg = std::pair<std::string, std::vector<Item>>;
-	using StreamMsgs = std::pair<std::string, std::vector<Msg>>;
+	spdlog::info("Ожидание файлов в очереди {}...", config::stream_name);
 
-	spdlog::info("Ожидание файлов в очереди {}...", stream_name);
-
-	// --- САМ ЦИКЛ ---
 	while (true) {
+
+		json payload;
+		std::string msg_id = "";
+
+		// 1. ИЩЕМ ЗАВИСШИЕ ЗАДАЧИ ("0")
+		msg_id = redis.xreadgroup(config::group_name, config::consumer_name, config::stream_name, "0",
+								  std::chrono::milliseconds(0), 1, payload);
+
+		if (msg_id.empty()) {
+			// Если зависших нет, ждем новые (">")
+			msg_id = redis.xreadgroup(config::group_name, config::consumer_name, config::stream_name, ">",
+									  std::chrono::milliseconds(2000), 1, payload);
+		} else {
+			spdlog::info("Выполняю незавершенную задачу...");
+		}
+
+		if (msg_id.empty()) {
+			spdlog::info("Нахожусь в ожидании эксель файлов");
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			continue;
+		}
+
+		// --- ОБРАБОТКА ---
+		string filepath = payload["filepath"];
+		auto meta_info = payload["meta_info"];
+		std::string filename = fs::path(filepath).filename();
+		auto view_url = safe_get_str(meta_info, "view_url", "URL_NOT_FOUND");
+
+		spdlog::info("Взят в работу файл: {}", filepath);
+
 		try {
-			// Создаем пустой вектор для ответов
-			std::vector<StreamMsgs> reply;
+			// Пытаемся спарсить
+			process_excel_file(filepath, payload, msg_id);
 
-			// Передаем параметры напрямую: timeout (2000ms) и count (1)
-			redis.xreadgroup(group_name, consumer_name, stream_name, ">",
-							 std::chrono::milliseconds(2000), // BLOCK
-							 1,								  // COUNT
-							 std::back_inserter(reply));	  // Куда складывать
+			// Если функция process_excel_file отработала и НЕ ВЫБРОСИЛА исключений:
+			spdlog::info("Цикл работы с файлом завершен: {}", filepath);
+			redis.xack(config::stream_name, config::group_name, msg_id);
+			redis.xdel(config::stream_name, msg_id); // Удаляем успешно обработанное сообщение
 
-			if (reply.empty()) {
-				// Если за 2 секунды никто ничего не прислал - спим и пробуем снова
-				std::this_thread::sleep_for(std::chrono::milliseconds(500));
-				continue;
+		} catch (std::exception &e) {
+			// ФАТАЛЬНЫЙ КРАШ (на уровне самого парсера/библиотеки)
+			spdlog::error("Фатальная ошибка (Exception) при парсинге файла {}: {}", filepath, e.what());
+
+			bool file_is_fine = safe_copy_file(filepath, config::dlq_directory_path, false, payload, view_url);
+
+			if (!file_is_fine) {
+				// Если даже в DLQ не смогли скопировать (проблемы с диском)
+				redis.xdel(config::stream_name, msg_id);
+			} else {
+				payload["msg"] = e.what();
+
+				// Пишем в Hash
+				redis.hset(config::REDIS_DLQ_KEY, filename, payload.dump());
+				spdlog::warn("Крашнутый файл отправлен в DLQ: {}", filename);
+
+				// Обязательно удаляем мусор из /dev/shm
+				std::error_code ec;
+				fs::remove(filepath, ec);
+
+				// Удаляем из исходной очереди, так как задача теперь живет в DLQ
+				redis.xdel(config::stream_name, msg_id);
 			}
-
-			// ... дальше пошел твой старый цикл for (const auto& stream_data : reply) ...
-
-			for (const auto &stream_data : reply) {
-				for (const auto &msg : stream_data.second) {
-					string msg_id = msg.first;
-					string payload_str;
-
-					for (const auto &field : msg.second) {
-						if (field.first == "payload")
-							payload_str = field.second;
-					}
-
-					if (!payload_str.empty()) {
-						// Разбираем JSON от Питона
-						auto payload = json::parse(payload_str);
-						string filepath = payload["filepath"];
-
-						// ИСПРАВЛЕННАЯ СТРОКА: просто забираем вложенный JSON-объект
-						auto meta_info = payload["meta_info"];
-
-						spdlog::info("Взят в работу файл: {}", filepath);
-
-						// Запускаем парсинг
-						process_excel_file(filepath, meta_info, redis);
-
-						spdlog::info("Файл успешно обработан: {}", filepath);
-					}
-
-					// Подтверждаем выполнение задачи Питону
-					redis.xack(stream_name, group_name, msg_id);
-					// redis.xdel(stream_name, msg_id);  - Закомментируем для тестов
-				}
-			}
-		} catch (const std::exception &e) {
-			spdlog::error("Критическая ошибка (Краш при парсинге): {}", e.what());
-			std::this_thread::sleep_for(std::chrono::seconds(3));
 		}
 	}
 

@@ -38,9 +38,12 @@ add_executable(worker
     src/worker.cpp
     src/Utils.cpp
     src/ParserObjects.cpp
+    src/redis_wrapper.cpp
     # Заголовки 
     include/Utils.hpp
     include/ParserObjects.hpp
+    include/redis_wrapper.hpp
+    include/config.hpp
 )
 
 target_include_directories(worker PRIVATE ${CMAKE_SOURCE_DIR}/include)
