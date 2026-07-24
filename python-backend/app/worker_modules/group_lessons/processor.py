@@ -2,6 +2,7 @@ from typing import Tuple
 from sqlmodel import select, delete, func, col
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.schedule import (
+    Educational_form,
     Institute,
     Group,
     Teacher,
@@ -37,6 +38,15 @@ async def process_schedule(
     )
     inst_match = (await session.scalars(request)).first()
 
+    request = select(Educational_form).where(
+        func.similarity(Educational_form.name, schedule.education_form) >= 0.90,
+    )
+    edu_form_match = (await session.scalars(request)).first()
+
+    if not edu_form_match:
+        edu_form_match = Educational_form(name=schedule.education_form)  # type: ignore
+        await session.flush()
+
     if not inst_match:
         inst_match = Institute(
             name=schedule.institute,
@@ -48,8 +58,8 @@ async def process_schedule(
         await r.delete(CacheKeys.institutes)
         await session.flush()
 
-    # 🛡 TYPE GUARD: Успокаиваем Pyright, доказывая, что ID точно есть
-    if inst_match.id is None:
+    # Pyright: Завали ебальник
+    if inst_match.id is None or edu_form_match.id is None:
         raise ORMStateError(
             f"Аномалия БД: Институту '{schedule.institute}' не присвоен ID"
         )
@@ -67,7 +77,7 @@ async def process_schedule(
         group_match = Group(
             name=schedule.group,
             course=schedule.course,
-            education_form=schedule.education_form,
+            education_form_id=edu_form_match.id,
             start_education_date=schedule.start_education_date,
             end_education_date=schedule.end_education_date,
             institute_id=inst_match.id,

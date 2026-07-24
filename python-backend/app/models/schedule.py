@@ -1,6 +1,6 @@
 from typing import List, Optional, Any
 from datetime import time, date, datetime, timezone
-from sqlmodel import JSON, SQLModel, Field, Relationship, asc, ForeignKey
+from sqlmodel import JSON, SQLModel, Field, Relationship, asc, ForeignKey, table
 from enum import Enum
 
 
@@ -51,6 +51,12 @@ class Institute(SQLModel, table=True):
     )
 
 
+class Educational_form(SQLModel, table=True):
+    __tablename__: str = "educational_forms"  # type: ignore
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)
+
+
 # 2. Таблица групп
 class Group(SQLModel, table=True):
     __tablename__: str = "groups"  # type: ignore
@@ -58,8 +64,7 @@ class Group(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     course: Optional[str] = Field(default=None)
-    education_form: Optional[str] = Field(default=None)
-
+    education_form_id: int = Field(foreign_key="educational_forms.id")
     start_education_date: date
     end_education_date: date
 

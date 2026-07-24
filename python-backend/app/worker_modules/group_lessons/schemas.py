@@ -102,6 +102,11 @@ class SchedulePayloadSchema(BaseModel):
     def normalize_group(cls, v: str):
         return v.strip().upper().replace(" ", "")
 
+    @field_validator("education_form", mode="before")
+    @classmethod
+    def normalize_educational_form(cls, v: str):
+        return v.strip().title()
+
     # 💥 А ВОТ ТВОЯ НОРМАЛИЗАЦИЯ ИНСТИТУТА 💥
     # mode='after' означает, что Pydantic уже проверил типы полей,
     # и теперь мы можем безопасно менять сам объект (self)

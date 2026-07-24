@@ -107,6 +107,7 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 
 		root["course"] = checkedHead.meta.course;
 		root["group"] = wks.name();
+
 		root["start-education-date"] = checkedHead.meta.startDate;
 		root["end-education-date"] = checkedHead.meta.endDate;
 
@@ -133,6 +134,16 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 			using SR = scanner::scheduleRow;
 
 			for (int endCounter = 0; endCounter < 6; wideScan.nextRow()) {
+
+				if (checkedHead.meta.startDate == "" or checkedHead.meta.startDate == "") {
+
+					list_has_human_errors = true;
+					file_has_trash_lists = true;
+					spdlog::warn("Не найдена дата ");
+					dlq_msg.emplace_back(std::to_string(dlq_msg.size()) + "Не найдена дата начала или конца семестра");
+					break;
+				}
+
 				wideScan.extractRow();
 
 				if (wideScan.currentStatus == scanner::response::EmptyRow or
