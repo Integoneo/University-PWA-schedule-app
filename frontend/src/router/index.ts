@@ -1,8 +1,9 @@
-// src/router/index.ts
 import { createRouter, createWebHistory } from 'vue-router'
 import { store } from '../store'
 import Schedule from '../components/Schedule.vue'
-import Onboarding from '../components/Onboarding.vue' // Сейчас создадим
+import Onboarding from '../components/Onboarding.vue' 
+import Settings from '../components/Settings.vue'
+import Profile from '../components/Profile.vue'
 
 const DummyExams = { template: '<div class="h-full flex items-center justify-center text-slate-500 font-medium pb-20">Экзамены (Скоро)</div>' }
 const DummySearch = { template: '<div class="h-full flex items-center justify-center text-slate-500 font-medium pb-20">Поиск и Избранное</div>' }
@@ -15,7 +16,8 @@ const routes = [
   { path: '/lessons', name: 'Schedule', component: Schedule },
   { path: '/exams', name: 'Exams', component: DummyExams },
   { path: '/search', name: 'Search', component: DummySearch },
-  { path: '/settings', name: 'Settings', component: DummySettings }
+  { path: '/settings', name: 'Settings', component: Settings },
+  { path: '/profile', name: 'Profile', component: Profile, meta: { hideNavbar: true } }
 ]
 
 const router = createRouter({

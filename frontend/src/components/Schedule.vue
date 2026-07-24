@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { mockSchedule } from '../data/mock'
+import BottomSheet from './BottomSheet.vue'
+import { store } from '../store'
 
 // === 1. УМНАЯ МАТЕМАТИКА ДАТ И ВРЕМЕНИ ===
 const semesterStartDate = new Date('2026-03-23T00:00:00')
@@ -21,37 +23,6 @@ const groupInfo = ref({
   semester_dates: '1 сентября — 28 декабря 2026'
 })
 
-// === ФИЗИКА СВАЙПА ШТОРКИ ===
-const sheetY = ref(0)
-const isDraggingSheet = ref(false)
-let dragStartY = 0
-
-const onSheetTouchStart = (e: TouchEvent) => {
-  dragStartY = e.touches[0].clientY
-  isDraggingSheet.value = true
-}
-
-const onSheetTouchMove = (e: TouchEvent) => {
-  const currentY = e.touches[0].clientY
-  const delta = currentY - dragStartY
-  
-  // Разрешаем тянуть только вниз
-  if (delta > 0) {
-    sheetY.value = delta
-    // Блокируем системный скролл при перетаскивании
-    if (e.cancelable) e.preventDefault()
-  }
-}
-
-const onSheetTouchEnd = () => {
-  isDraggingSheet.value = false
-  // Если протянули больше чем на 100 пикселей вниз - закрываем
-  if (sheetY.value > 100) {
-    isGroupSheetOpen.value = false
-  }
-  // В любом случае сбрасываем Y. Если не закрылась - красиво отпружинит обратно
-  sheetY.value = 0
-}
 
 // Форматируем форму обучения (делаем первую букву заглавной, остальное строчными)
 const formatStudyForm = (str: string) => {
@@ -120,6 +91,15 @@ const currentWeekDates = computed(() => {
 
 const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 const shortDays = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
+
+// Вспомогательная функция на фронте
+const normalizeStudyForm = (rawForm: string) => {
+  const text = rawForm.toLowerCase()
+  if (text.includes('очн')) return 'Очная'
+  if (text.includes('заоч')) return 'Заочная'
+  if (text.includes('очно-заоч') || text.includes('вечер')) return 'Очно-заочная'
+  return 'Неизвестно'
+}
 
 // === 2. ФИЛЬТРАЦИЯ И СТЕЙТЫ ПАР ===
 const currentLessons = computed(() => {
@@ -375,137 +355,73 @@ const formatPlace = (place: string) => {
       <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pointer-events-none z-30"></div>
     </div>
 
-    <!-- === ШТОРКА ГРУППЫ (BOTTOM SHEET) === -->
-        <Teleport to="body">
-        
-        <!-- Темный фон (Backdrop) -->
-        <Transition name="fade">
-            <div v-if="isGroupSheetOpen" @click="isGroupSheetOpen = false" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[60]"></div>
-        </Transition>
+<!-- === УНИВЕРСАЛЬНАЯ ШТОРКА ГРУППЫ === -->
+    <BottomSheet :is-open="isGroupSheetOpen" @close="isGroupSheetOpen = false">
+      
+      <!-- ЗОНА СВАЙПА: Заголовок шторки -->
+      <template #header>
+        <div class="flex items-center justify-between pointer-events-none mb-2">
+          <h2 class="text-2xl font-bold text-white tracking-tight">Группа {{ store.groupInfo?.group_name || 'Д-101' }}</h2>
+          <button @click.stop="isGroupSheetOpen = false" class="p-2 -mr-2 rounded-full text-slate-400 pointer-events-auto active:scale-95 transition-transform">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </template>
 
-        <!-- Сама выезжающая панель -->
-        <Transition name="slide-up">
-            <div 
-            v-if="isGroupSheetOpen" 
-            class="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 rounded-t-[2rem] z-[70] shadow-[0_-10px_40px_rgba(0,0,0,0.3)]"
-            style="padding-bottom: env(safe-area-inset-bottom);"
-            :style="{ 
-                transform: sheetY > 0 ? `translateY(${sheetY}px)` : '',
-                transition: isDraggingSheet ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-            }"
-            >
-            
-            <!-- ЗОНА СВАЙПА (Язычок + Заголовок) -->
-            <div 
-                @touchstart="onSheetTouchStart" 
-                @touchmove="onSheetTouchMove" 
-                @touchend="onSheetTouchEnd"
-                class="px-5 pt-3 pb-4 touch-none"
-            >
-                <!-- Ползунок сверху -->
-                <div class="w-full flex justify-center mb-4">
-                <div class="w-12 h-1.5 bg-slate-700/50 rounded-full"></div>
-                </div>
+      <!-- КОНТЕНТ ШТОРКИ -->
+      
+      <!-- Главная информационная карточка -->
+      <div class="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-4 flex flex-col gap-4">
+        <!-- Институт -->
+        <div class="flex items-center gap-3.5">
+          <div class="w-11 h-11 rounded-xl bg-slate-800/50 border border-slate-700/50 flex items-center justify-center shrink-0 overflow-hidden p-2">
+            <img v-if="groupInfo.logo_url" :src="groupInfo.logo_url" class="w-full h-full object-contain filter invert opacity-80" alt="Логотип" />
+            <svg v-else class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" /></svg>
+          </div>
+          <div class="flex flex-col justify-center min-w-0 pr-2">
+            <span v-if="groupInfo.institute_short_name" class="text-[11px] text-indigo-400 font-bold uppercase tracking-widest mb-0.5">{{ groupInfo.institute_short_name }}</span>
+            <span class="text-xs font-semibold text-slate-200 leading-tight uppercase truncate">{{ groupInfo.institute_full_name }}</span>
+          </div>
+        </div>
 
-                <!-- Заголовок -->
-                <div class="flex items-center justify-between pointer-events-none">
-                <h2 class="text-2xl font-bold text-white tracking-tight">Группа Д-101</h2>
-                <button @click.stop="isGroupSheetOpen = false" class="p-2 rounded-full bg-slate-800/50 text-slate-400 pointer-events-auto">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-                </div>
-            </div>
+        <div class="h-px w-full bg-gradient-to-r from-transparent via-slate-700/50 to-transparent"></div>
 
-            <!-- Контент шторки (не реагирует на свайп, можно скроллить если надо) -->
-            <div class="px-5 pb-8">
-                
-    <!-- Главная информационная карточка (Минимализм) -->
-                <div class="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-4 flex flex-col gap-4">
-                
-                <!-- 1. Институт (Адаптивный рендер short_name и full_name) -->
-                <div class="flex items-center gap-3.5">
-                    <!-- Логотип -->
-                    <div class="w-11 h-11 rounded-xl bg-slate-800/50 border border-slate-700/50 flex items-center justify-center shrink-0 overflow-hidden p-2">
-                    <img v-if="groupInfo.logo_url" :src="groupInfo.logo_url" class="w-full h-full object-contain filter invert opacity-80" alt="Логотип" />
-                    <svg v-else class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" />
-                    </svg>
-                    </div>
-                    
-                    <!-- Названия -->
-                    <div class="flex flex-col justify-center">
-                    <!-- Если есть short_name (например, ИЭиМ), выводим его как акцентный микро-заголовок -->
-                    <span 
-                        v-if="groupInfo.institute_short_name" 
-                        class="text-[11px] text-indigo-400 font-bold uppercase tracking-widest mb-0.5"
-                    >
-                        {{ groupInfo.institute_short_name }}
-                    </span>
-                    <!-- Полное название -->
-                    <span class="text-xs font-semibold text-slate-200 leading-tight uppercase">
-                        {{ groupInfo.institute_full_name }}
-                    </span>
-                    </div>
-                </div>
+        <!-- Сетка: Поток, Форма и Даты -->
+        <div class="grid grid-cols-2 gap-y-4 gap-x-4 items-center">
+          <div class="flex flex-col justify-center">
+            <span class="text-base font-bold text-slate-100">{{ groupInfo.file_title }}</span>
+          </div>
+          <div class="flex flex-col justify-center border-l border-slate-700/50 pl-4">
+            <span class="text-xs font-medium text-slate-300 leading-snug">{{ formatStudyForm(groupInfo.study_form) }}</span>
+          </div>
+          <div class="col-span-2 flex flex-col pt-3 border-t border-slate-700/30">
+            <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Период обучения</span>
+            <span class="text-sm font-medium text-slate-200">{{ groupInfo.semester_dates }}</span>
+          </div>
+        </div>
+      </div>
 
-                <div class="h-px w-full bg-gradient-to-r from-transparent via-slate-700/50 to-transparent"></div>
+      <!-- КНОПКА "В ИЗБРАННОЕ" -->
+      <!-- Показываем её, если в Store есть выбранная группа -->
+      <div v-if="store.groupInfo" class="mt-4">
+        <button 
+          @click="store.toggleFavorite(store.groupInfo); store.addToast(store.isFavorite(store.groupInfo.group_id) ? 'Добавлено в избранное' : 'Удалено из избранного', 'success')"
+          class="w-full py-3.5 flex items-center justify-center gap-2 rounded-xl transition-colors font-bold text-sm active:scale-[0.98]"
+          :class="store.isFavorite(store.groupInfo.group_id) 
+            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+            : 'bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700'"
+        >
+          <!-- Иконка Звезды (Закрашенная, если в избранном, иначе контурная) -->
+          <svg class="w-5 h-5" :fill="store.isFavorite(store.groupInfo.group_id) ? 'currentColor' : 'none'" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+          </svg>
+          {{ store.isFavorite(store.groupInfo.group_id) ? 'В избранном' : 'Добавить в избранное' }}
+        </button>
+      </div>
 
-                <!-- 2. Сетка: Поток, Форма (БЕЗ ЗАГОЛОВКОВ) и Даты -->
-                <div class="grid grid-cols-2 gap-y-4 gap-x-4 items-center">
-                    
-                    <!-- Поток (например, "2 курс") -->
-                    <div class="flex flex-col justify-center">
-                    <span class="text-base font-bold text-slate-100">{{ groupInfo.file_title }}</span>
-                    </div>
-                    
-                    <!-- Форма обучения -->
-                    <div class="flex flex-col justify-center border-l border-slate-700/50 pl-4">
-                    <span class="text-xs font-medium text-slate-300 leading-snug">
-                        {{ formatStudyForm(groupInfo.study_form) }}
-                    </span>
-                    </div>
-
-                <!-- Период обучения (Заголовок оставили, как ты просил) -->
-                <div class="col-span-2 flex flex-col pt-3 border-t border-slate-700/30">
-                  <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Период обучения</span>
-                  <span class="text-sm font-medium text-slate-200">{{ groupInfo.semester_dates }}</span>
-                </div>
-                
-              </div>
-
-            </div>
-
-                <!-- Место под Избранное -->
-                <div class="mt-6">
-                <span class="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Сохраненные расписания</span>
-                <div class="mt-3 flex flex-col items-center justify-center py-6 bg-slate-800/20 border border-slate-700/30 border-dashed rounded-xl">
-                    <span class="text-sm text-slate-400 font-medium">Пока нет других групп</span>
-                </div>
-                </div>
-
-            </div>
-            </div>
-        </Transition>
-        </Teleport>
+    </BottomSheet>
   </div>
 </template>
 
-<style scoped>
-/* Анимация затемнения фона */
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-.fade-enter-from, .fade-leave-to {
-  opacity: 0;
-}
-
-/* Анимация выезда шторки снизу */
-.slide-up-enter-active, .slide-up-leave-active {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.slide-up-enter-from, .slide-up-leave-to {
-  transform: translateY(100%);
-}
-</style scoped>
