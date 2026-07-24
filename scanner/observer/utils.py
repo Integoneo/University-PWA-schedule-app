@@ -1,4 +1,4 @@
-from typing import Tuple, Dict, List, Optional
+from typing import Literal, Tuple, Dict, List, Optional
 from urllib.parse import urljoin
 from functools import wraps
 from time import time
@@ -9,6 +9,7 @@ import asyncio
 import logging
 import json
 
+from shared import NewMessage, proxy
 
 from shared import (
     CheckedURL,
@@ -29,6 +30,9 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("Observer")
+
+
+PROXY_URL_PARSING = f"http://{proxy.PROXY_LOGIN_PARSING}:{proxy.PROXY_PASSWORD_PARSING}@{proxy.PROXY_HOST}:{proxy.PROXY_PORT}"
 
 
 def parse_and_count_schedule(
@@ -165,16 +169,11 @@ def parse_and_count_schedule(
                         institute=inst_name,
                         study_form=study_form,
                         file_url=file_url,
-                        view_url=view_url,
+                        view_url=view_url,  # pyright: ignore
                         logo_url=logo_url,
                     )
 
                     results.append(url_object)
-
-    if stats["institutes"] > 0 and stats["valid_files"] == 0:
-        raise DOMStructureChangedError(
-            "DOM broken: Institutes found, but 0 valid Excel files."
-        )
 
     return stats, results
 
@@ -223,19 +222,21 @@ async def check_anomaly_and_save_stats(current_stats: dict):
 
         # Если сработал хотя бы один триггер из THRESHOLDS — рубим пайплайн
         if is_anomalous:
-            alert_msg = (
-                "🚨 АНОМАЛИЯ ПАРСИНГА! Обнаружено критическое падение тегов:\n"
-                + "\n".join(anomaly_reasons)
+            logger.error(anomaly_reasons)
+            await send_tg_alert(
+                "DEAD",
+                "АНОМАЛИЯ ПАРСИНГА! Обнаружено критическое падение тегов",
+                anomaly_reasons,
             )
-            logger.error(alert_msg)
-            # ТУТ ЗАГЛУШКА ДЛЯ ТЕЛЕГРАМА (КРИТИЧЕСКИЙ АЛЕРТ)
-            # await send_telegram_alert(alert_msg, level="CRITICAL")
             raise DOMStructureChangedError("Anomaly detected. Halting execution.")
 
         # Если аномалий нет, но были любые изменения — просто шлем инфо-уведомление
-        # elif info_changes:
-        #     info_msg = "ℹ️ Изменение в структуре (в пределах нормы):\n" + "\n".join(info_changes)
-        #     await send_telegram_alert(info_msg, level="INFO")
+        elif info_changes:
+            await send_tg_alert(
+                msg_level="INFO",
+                msg="Изменение в структуре (в пределах нормы)",
+                details=info_changes,
+            )
 
     else:
         logger.info("Прошлые метрики не найдены. Это первый запуск (Холодный старт).")
@@ -304,25 +305,25 @@ def fallback_head_DLQ(func):
             except aiohttp.ClientResponseError as e:
                 err_obj = {
                     "attempt": current_attempt,
-                    "type": f"HTTP {e.status}",
-                    "msg": e.message,
+                    "msg": "HTTP Error",
+                    "details": e.status,
                 }
             except aiohttp.ClientConnectionError as e:
                 err_obj = {
                     "attempt": current_attempt,
-                    "type": "ConnectionError",
+                    "msg": "ConnectionError",
                     "details": str(e),
                 }
             except asyncio.TimeoutError:
                 err_obj = {
                     "attempt": current_attempt,
-                    "type": "Timeout",
+                    "msg": "Timeout",
                     "details": "Превышено время ожидания",
                 }
             except Exception as e:
                 err_obj = {
                     "attempt": current_attempt,
-                    "type": e.__class__.__name__,
+                    "msg": e.__class__.__name__,
                     "details": str(e),
                 }
 
@@ -340,6 +341,15 @@ def fallback_head_DLQ(func):
 
         await redis_pool.hset(
             EXCEL_SRC_DLQ, url, json.dumps(dlq_state, ensure_ascii=False)
+        )
+
+        # Отправляю только 1 сообщение, поскольку 1 сообщение = 1 файл
+        # нет смысла сыпать весь dlq_state
+        last_attempt = dlq_state["attempts"][-1]
+        await send_tg_alert(
+            msg_level="WARN",
+            msg="Ссылка по HEAD-запросу попала в DLQ",
+            details=last_attempt["msg"],
         )
 
         # Возвращаем None, так как получить Response не удалось
@@ -361,7 +371,9 @@ async def check_single_url(
     if not url_excel:
         return None
 
-    async with session.head(url_excel, allow_redirects=True) as response:
+    async with session.head(
+        url_excel, allow_redirects=True, proxy=PROXY_URL_PARSING
+    ) as response:
         response.raise_for_status()
 
         ETag = response.headers.get("ETag", "")
@@ -382,8 +394,8 @@ async def check_single_url(
             result = CheckedURL(
                 **url_obj.model_dump(),
                 ETag=ETag,
-                LastModified=Last_Modified,
-                ContentLength=Content_Length,
+                LastModified=Last_Modified,  # pyright: ignore
+                ContentLength=Content_Length,  # pyright: ignore
             )
 
             return result
@@ -451,6 +463,12 @@ async def process_schedules_to_redis(parsed_data: List[CheckedURL]):
                 DOWNLOADER_QUEUE, {"payload": item_json, "type": "lessons"}
             )
 
+            await send_tg_alert(
+                msg_level="INFO",
+                msg="Файл отправлен на скачивание",
+                details="Новый эксель файл",
+            )
+
         else:
             # СЦЕНАРИЙ 2: Файл уже есть в базе. Нужно сравнить на изменения.
             existing_item = json.loads(existing_item_str)
@@ -489,7 +507,45 @@ async def process_schedules_to_redis(parsed_data: List[CheckedURL]):
                     DOWNLOADER_QUEUE, {"payload": item_json, "type": "lessons"}
                 )
 
+                await send_tg_alert(
+                    msg_level="INFO",
+                    msg="Файл отправлен на скачивание",
+                    details="Обновление эксель файла",
+                )
+
     logger.info(
         f"Скан завершен. Всего файлов: {len(parsed_data)}. "
         f"Новых: {new_files_count}. Обновленных: {updated_files_count}."
     )
+
+
+async def send_tg_alert(
+    msg_level: Literal["INFO", "WARN", "ERROR", "CRITICAL", "DEAD"],
+    msg: str,
+    details: List[str] | str,
+):
+    new_message = NewMessage(
+        service="Observer",
+        msg_level=msg_level,
+        msg=msg,
+        details=details,  # pyright: ignore завали ебальник
+    )
+
+    # Готовим плоский словарь для Redis XADD
+    payload = {
+        "service": new_message.service,
+        "msg_level": new_message.msg_level,
+        "msg": new_message.msg,
+    }
+
+    # Тот самый нюанс: если кто-то из микросервисов передаст сюда список,
+    # нам нужно превратить его в JSON-строку, чтобы Redis его съел.
+    if isinstance(new_message.details, list):
+        payload["details"] = json.dumps(new_message.details, ensure_ascii=False)
+    else:
+        payload["details"] = new_message.details
+
+    try:
+        await redis_pool.xadd("notifier:queue", payload)  # pyright: ignore
+    except Exception as e:
+        print(f"⚠️ Ошибка отправки алерта в очередь: {e}")

@@ -1,7 +1,41 @@
+import json
 import redis.asyncio as aioredis
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import Literal, List
+
+import sys
+from pydantic import ValidationError
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# INFO: ================== PROXY =================================
+class ProxySettings(BaseSettings):
+    PROXY_HOST: str
+    PROXY_PORT: str
+    PROXY_LOGIN_PARSING: str
+    PROXY_PASSWORD_PARSING: str
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+
+try:
+    proxy = ProxySettings()  # pyright: ignore[reportCallIssue]
+
+except ValidationError as e:
+    print("\n" + "=" * 50)
+    print("🚨 ОШИБКА ЗАПУСКА: Отсутствуют или неверны настройки окружения!")
+    print("Пожалуйста, убедись, что файл .env существует и заполнен корректно.")
+    print("Или проверь секреты в твоем CI/CD пайплайне.")
+    print("=" * 50)
+
+    for error in e.errors():
+        field_name = error["loc"][0]
+        error_msg = error["msg"]
+        print(f"❌ Проблема с полем '{field_name}': {error_msg}")
+    print("=" * 50 + "\n")
+
+    sys.exit(1)
+
+# INFO: ================== PROXY =================================
 # INFO: =================== REDIS ===================================
 
 REDIS_URL = "redis://localhost:6379/0"
@@ -16,7 +50,6 @@ BAN_TIME = 1200  # Ссылки по которым не прошли head за�
 DOWNLOADER_QUEUE = "downloader:dowload_queue"
 
 CPP_QUEUE = "parser:ready_schedules"  # Очередь для плюсового парсера
-DOWNLOAD_DIR = "./temp_downloads"  # Временная папка. В докере поменяем на /dev/shm
 
 
 redis_pool = aioredis.Redis.from_url(REDIS_URL, decode_responses=True)
@@ -44,6 +77,21 @@ class CheckedURL(NotCheckedURL):
     ETag: str | None
     LastModified: str | None = Field(alias="Last-Modified")
     ContentLength: str | None = Field(alias="Content-Length")
+
+
+class NewMessage(BaseModel):
+    service: str
+    msg_level: Literal["INFO", "WARN", "ERROR", "CRITICAL", "DEAD"] = "INFO"
+    msg: str
+    details: List[str]
+    model_config = ConfigDict(populate_by_name=True)
+
+    @field_validator("details", mode="before")
+    @classmethod
+    def to_list(cls, v):
+        if isinstance(v, str):
+            return [v]
+        return v
 
 
 # INFO: =================== SCHEMAS ===================================
