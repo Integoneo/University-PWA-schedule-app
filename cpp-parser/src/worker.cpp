@@ -39,6 +39,8 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 
 	// ЕСЛИ ОШИБКА ФАЙЛОВОЙ СИСТЕМЫ ПРИ АРХИВАЦИИ
 	if (!file_is_fine) {
+		send_tg_alert("CRITICAL", "Ошибка файловой системы", "Ошибка при копировании файла в архив");
+
 		spdlog::error("Не удалось скопировать файл в архив: {}", filepath);
 		redis.xdel(config::stream_name, msg_id); // Удаляем из очереди (1-й и единственный раз)
 
@@ -75,6 +77,8 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 						 "вопросом, название листа: '{}'",
 						 wks.name());
 			successful_lists.emplace_back(wks.name()); // Будем эти мусорные листы пока что просто скипать
+
+			send_tg_alert("INFO", "Успешный парсинг группы", "Мусорный лист миноров - Пропускаю");
 			continue;
 		}
 
@@ -82,10 +86,13 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 
 		if (!checkedHead.readyHeader) {
 			spdlog::warn("Пропуск листа '{}': Нестандартная структура таблицы (шапка не найдена)", wks.name());
+
 			file_has_trash_lists = true;
 			dlq_msg.emplace_back(std::to_string(dlq_msg.size()) +
 								 ". Нестандартная структура таблицы (шапка не найдена)");
-			continue; // Сразу прыгаем к следующему листу, не трогаем JSON и Redis!
+			send_tg_alert("WARN", "Группа отправлена в DLQ", "Нестандартная структура таблицы (шапка не найдена)");
+			continue; // Сразу прыгаем к следующему листу, не
+					  // трогаем JSON и Redis!
 		}
 
 		if (checkedHead.meta.institute == "") {
@@ -111,6 +118,17 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 		root["start-education-date"] = checkedHead.meta.startDate;
 		root["end-education-date"] = checkedHead.meta.endDate;
 
+		if (checkedHead.meta.startDate == "" || checkedHead.meta.endDate == "") {
+			list_has_human_errors = true;
+			file_has_trash_lists = true;
+			spdlog::warn("Не найдена дата начала или конца семестра");
+			send_tg_alert("WARN", "Группа отправлена в DLQ", "Не найдена дата начала или конца семестра");
+			checkedHead.readyHeader = false;
+			// Меняю состояние шапки что бы не парсить дальше этот лист
+			dlq_msg.emplace_back(std::to_string(dlq_msg.size()) + "Не найдена дата начала или конца семестра");
+			continue;
+		}
+
 		root["view_url"] = safe_get_str(python_meta, "view_url", "");
 		root["logo_url"] = safe_get_str(python_meta, "logo_url", "");
 		root["lessons"] = json::array();
@@ -134,15 +152,6 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 			using SR = scanner::scheduleRow;
 
 			for (int endCounter = 0; endCounter < 6; wideScan.nextRow()) {
-
-				if (checkedHead.meta.startDate == "" or checkedHead.meta.startDate == "") {
-
-					list_has_human_errors = true;
-					file_has_trash_lists = true;
-					spdlog::warn("Не найдена дата ");
-					dlq_msg.emplace_back(std::to_string(dlq_msg.size()) + "Не найдена дата начала или конца семестра");
-					break;
-				}
 
 				wideScan.extractRow();
 
@@ -188,6 +197,9 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 							dlq_msg.emplace_back(std::to_string(dlq_msg.size()) +
 												 ". У пары не найдена учебная площадка - логическая ошибка");
 							// Очищаем уже собранные пары, этот лист мы в БД не пустим!
+
+							send_tg_alert("WARN", "Группа отправлена в DLQ",
+										  "У пары не найдена учебная площадка - логическая ошибка");
 							root["lessons"].clear();
 							break;
 						}
@@ -264,6 +276,9 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 							dlq_msg.emplace_back(std::to_string(dlq_msg.size()) + ". Группа " + wks.name() +
 												 " Висящая ячейка без названия пары!");
 
+							send_tg_alert("WARN", "Группа отправлена в DLQ",
+										  "Найдена висящая ячейка без названия пары");
+
 							// Очищаем уже собранные пары, этот лист мы в БД не пустим!
 							root["lessons"].clear();
 
@@ -290,10 +305,12 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 
 			successful_lists.emplace_back(wks.name());
 
-			string payload = root.dump(4); // TODO: Убрать 4 для продакшена
+			string payload = root.dump(4);
 			vector<pair<string, string>> redis_msg = {{"payload", payload}, {"type", "lessons"}};
+
 			redis.xadd("db:parsed_lessons", "*", redis_msg);
 
+			send_tg_alert("INFO", "Успешный парсинг группы", "Группа отправлена на обработку");
 			spdlog::info("Лист '{}' успешно отправлен. Институт: '{}', Курс: '{}', Группа: '{}'", wks.name(),
 						 root["institute"].get<std::string>(), root["course"].get<std::string>(),
 						 root["group"].get<std::string>());
@@ -305,8 +322,10 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 		for (const auto &s_name : successful_lists) {
 			try {
 				doc.workbook().deleteSheet(s_name);
-			} catch (...) {
+			} catch (std::exception &e) {
 				spdlog::warn("Ошибка удаления листа");
+
+				send_tg_alert("ERROR", "Ошибка удаления листа", static_cast<std::string>(e.what()));
 			} // Безопасное игнорирование ошибок OpenXLSX
 		}
 
@@ -318,9 +337,9 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 		file_is_fine = safe_copy_file(filepath, config::dlq_directory_path, false, python_meta, href);
 
 		if (!file_is_fine) {
-			spdlog::error("Не удалось скопировать файл в архив: {}", filepath);
+			spdlog::error("Не удалось скопировать файл в DLQ: {}", filepath);
 			redis.xdel(config::stream_name, msg_id);
-
+			send_tg_alert("CRITICAL", "Ошибка файловой системы", "Ошибка при копировании файла в DLQ");
 			// Удаляем мусор из /dev/shm
 			std::error_code remove_ec;
 			fs::remove(filepath, remove_ec);
@@ -357,6 +376,8 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 	fs::remove(filepath, remove_ec);
 	if (remove_ec) {
 		spdlog::error("Не удалось удалить временный файл {}: {}", filepath, remove_ec.message());
+
+		send_tg_alert("CRITICAL", "Ошибка файловой системы", "Ошибка при удалении файла");
 	}
 }
 
@@ -419,6 +440,7 @@ int main() {
 
 			bool file_is_fine = safe_copy_file(filepath, config::dlq_directory_path, false, payload, view_url);
 
+			send_tg_alert("CRITICAL", "Ошибка при парсинге", static_cast<std::string>(e.what()));
 			if (!file_is_fine) {
 				// Если даже в DLQ не смогли скопировать (проблемы с диском)
 				redis.xdel(config::stream_name, msg_id);

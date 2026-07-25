@@ -21,7 +21,7 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 void init_spdlogger() {
 	auto color_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
-	auto dup_filter = std::make_shared<spdlog::sinks::dup_filter_sink_mt>(std::chrono::hours(2));
+	auto dup_filter = std::make_shared<spdlog::sinks::dup_filter_sink_mt>(std::chrono::hours(12));
 	dup_filter->add_sink(color_sink);
 	auto logger = std::make_shared<spdlog::logger>("console", dup_filter);
 
@@ -264,6 +264,12 @@ std::string safe_get_str(const json &j, const std::string &key, const std::strin
 	return def;
 }
 
+void send_tg_alert(const std::string &msg_level, const std::string &msg, const std::string &details) {
+	std::vector<std::pair<std::string, std::string>> redis_msg = {
+		{"service", "cpp_parser"}, {"msg_level", msg_level}, {"msg", msg}, {"details", details}};
+
+	redis.xadd("notifier:queue", "*", redis_msg);
+}
 void fatal_crash(const std::string &context, const std::string &error_msg) {
 
 	spdlog::critical("ФАТАЛЬНАЯ ОШИБКА! Контекст {} \n Ошибка {}", context, error_msg);

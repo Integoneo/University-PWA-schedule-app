@@ -17,4 +17,6 @@ bool safe_copy_file(const std::filesystem::path source_filepath, const std::file
 
 std::string safe_get_str(const nlohmann::json &j, const std::string &key, const std::string &def);
 
+void send_tg_alert(const std::string &msg_level, const std::string &msg, const std::string &details);
+
 void fatal_crash(const std::string &context, const std::string &error_msg);
