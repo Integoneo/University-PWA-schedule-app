@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
-from datetime import time
+from datetime import time, date
 
 
 class Groups_PWA_schema(BaseModel):
@@ -16,7 +16,7 @@ class Institutes_PWA_schema(BaseModel):
     id: int
     name: str
     short_name: str
-    icon_url: str | None
+    logo_url: str | None
     groups: List[Groups_PWA_schema]
 
     model_config = ConfigDict(from_attributes=True)
@@ -39,7 +39,6 @@ class LessonPWA(BaseModel):
     type_of_lesson: Optional[str] = None
     classroom: Optional[str] = None
     educational_place: str
-    view_url: Optional[str]
     teachers: List[TeacherPWA]  # Вложенные преподаватели
 
     model_config = ConfigDict(from_attributes=True)
@@ -47,4 +46,9 @@ class LessonPWA(BaseModel):
 
 class GroupScheduleResponse(BaseModel):
     status: str
+    start_education_date: date
+    end_education_date: date
+    view_url: Optional[str]
     lessons: List[LessonPWA]
+
+    model_config = ConfigDict(from_attributes=True)

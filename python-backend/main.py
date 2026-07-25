@@ -1,6 +1,9 @@
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 # Импортируем синхронные функции инициализации БД
 from app.db.init_db import create_db_and_tables, insert_initial_config
@@ -8,9 +11,13 @@ from app.db.init_db import create_db_and_tables, insert_initial_config
 # Импортируем нашего воркера
 from worker import main_worker_loop
 from dlq_watcher import dlq_watcher_loop
+from app.utils import get_logger, send_tg_alert
 
 # Импортируем роутер
 from app.api.router import api_router
+
+
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -51,6 +58,53 @@ async def lifespan(app: FastAPI):
 
 # Инициализация приложения FastAPI
 app = FastAPI(title="University Schedule API", lifespan=lifespan)
+
+origins = [
+    "http://192.168.31.233:5173",
+    "http://localhost:5173",
+    "http://localhost:8080",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_id = uuid.uuid4().hex[:8]
+
+    logger.error(
+        f"[ErrorID: {error_id}] Необработанное исключение: {request.method} {request.url.path}",
+        exc_info=exc,
+    )
+
+    # 1. Забираем только название ошибки (например, ValidationError или ValueError)
+    exc_type = type(exc).__name__
+
+    # 2. Обрезаем само тело ошибки, если оно длиннее 200 символов
+    exc_msg = str(exc)
+    short_exc_msg = exc_msg[:200] + "..." if len(exc_msg) > 200 else exc_msg
+
+    await send_tg_alert(
+        service="Fastapi server",
+        msg_level="ERROR",
+        msg=f"Сбой эндпоинта {request.method} {request.url.path} ({exc_type}: {short_exc_msg})",
+        details=f"ErrorID: {error_id}",
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Внутренняя ошибка сервера. Разработчик уже в курсе об этом.",
+            "error_id": error_id,
+        },
+    )
+
 
 app.include_router(api_router, prefix="/api/v1")
 

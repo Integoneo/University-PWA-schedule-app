@@ -4,29 +4,19 @@ from xxhash import xxh64
 from pydantic import ValidationError
 import redis.asyncio as aioredis
 from devtools import debug
-import logging
 
 from app.db.engine import get_async_session
-from app.db.config import settings
+from app.utils import get_logger, send_tg_alert, redis_client
 
-# Импортируем наш модуль
 from app.worker_modules.group_lessons.schemas import SchedulePayloadSchema
 from app.worker_modules.group_lessons.processor import process_schedule
 
 
-REDIS = settings.REDIS_URL
-logging.basicConfig(
-    level=logging.DEBUG,  # Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    format="%(asctime)s | %(levelname)-8s | %(filename)s:%(lineno)d - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def main_worker_loop():
     logger.info("🎧 Нативный Async Worker запущен и ждет расписания...")
-    r = aioredis.from_url(REDIS)
     STREAM_NAME, GROUP_NAME, CONSUMER_NAME = (
         "db:parsed_lessons",
         "python",
@@ -34,9 +24,15 @@ async def main_worker_loop():
     )
 
     try:
-        await r.xgroup_create(STREAM_NAME, GROUP_NAME, id="0", mkstream=True)
-    except aioredis.ResponseError:
-        pass
+        await redis_client.xgroup_create(STREAM_NAME, GROUP_NAME, id="0", mkstream=True)
+    except aioredis.ResponseError as e:
+        if "BUSYGROUP" not in str(e):
+            await send_tg_alert(
+                "Python worker",
+                "CRITICAL",
+                "Ошибка подключения к Redis",
+                e.__class__.__name__,
+            )
 
     try:
         log_waiting_flag = (
@@ -45,7 +41,7 @@ async def main_worker_loop():
         while True:
             raw_dict = {}
             try:
-                response = await r.xreadgroup(
+                response = await redis_client.xreadgroup(
                     GROUP_NAME, CONSUMER_NAME, {STREAM_NAME: ">"}, count=1, block=2000
                 )
 
@@ -71,20 +67,30 @@ async def main_worker_loop():
                     validated_schedule = SchedulePayloadSchema(**raw_dict)
 
                     async for session in get_async_session():
-                        # 👇 ЛОВИМ КОРТЕЖ ИЗ ФУНКЦИИ
+                        #  ЛОВИМ КОРТЕЖ ИЗ ФУНКЦИИ
                         group_id, should_notify = await process_schedule(
                             session, validated_schedule, check_hash
                         )
 
-                        print(f"[{msg_id.decode()}] Успех: {validated_schedule.group}")
+                        logger.info(
+                            f"[{msg_id.decode()}] Успех: {validated_schedule.group}"
+                        )
 
-                        # 👇ЗАГЛУШКА ДЛЯ PUSH УВЕДОМЛЕНИЙ СТУДЕНТАМ
                         if should_notify:
-                            print(
-                                f"🔔 [PUSH STUB] Расписание группы {validated_schedule.group} (ID: {group_id}) изменилось!"
+                            # TODO: Сделать инвалидацию кэша для группы которая обновилась
+
+                            # redis_client.hdel()
+                            # BIG TODO: Настроить подписки на GOOGLE Firebase что бы отправлять уведолмения
+                            # об изменении расписания студентам
+                            # но это вообще на потом
+                            await send_tg_alert(
+                                "Python worker",
+                                "INFO",
+                                "Обновлено расписание группы",
+                                validated_schedule.institute,
                             )
-                            print(
-                                "🔔 [PUSH STUB] Имитация отправки push-уведомлений всем подписанным устройствам..."
+                            logger.info(
+                                f"🔔 [PUSH STUB] Расписание группы {validated_schedule.group} (ID: {group_id}) изменилось!"
                             )
 
                 except ValidationError as e:
@@ -102,19 +108,35 @@ async def main_worker_loop():
                         f"Группа '{group}', Дата начала обучения {start}, Дата конца обучения '{end}'"
                     )
                     logger.error(f"Быстрый просмотр файла расписания: {view_url}")
+                    await send_tg_alert(
+                        "Python worker", "ERROR", "Ошибка валидации расписания", inst
+                    )
                     debug(e)
-                await r.xack(STREAM_NAME, GROUP_NAME, msg_id)
-                await r.xdel(STREAM_NAME, msg_id)
+                await redis_client.xack(STREAM_NAME, GROUP_NAME, msg_id)
+                await redis_client.xdel(STREAM_NAME, msg_id)
 
                 raw_dict = {}
 
-            except aioredis.ConnectionError:
+            except aioredis.ConnectionError as e:
                 await asyncio.sleep(5)
+                await send_tg_alert(
+                    "Python worker",
+                    "CRITICAL",
+                    "Ошибка подключения к Redis",
+                    e.__class__.__name__,
+                )
             except Exception as e:
-                print(f"Непредвиденная ошибка воркера: {e}")
+                logger.error(f"Непредвиденная ошибка воркера: {e}")
+
+                await send_tg_alert(
+                    "Python worker",
+                    "CRITICAL",
+                    "Неизвестная ошибка",
+                    e.__class__.__name__,
+                )
                 await asyncio.sleep(5)
 
     except asyncio.CancelledError:
-        print("🛑 Завершение работы воркера...")
+        logger.info("🛑 Завершение работы воркера...")
     finally:
-        await r.close()
+        await redis_client.close()

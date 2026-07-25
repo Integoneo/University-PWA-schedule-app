@@ -56,6 +56,9 @@ class Educational_form(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
 
+    # Добавляем обратную связь для удобства
+    groups: List["Group"] = Relationship(back_populates="educational_form_obj")
+
 
 # 2. Таблица групп
 class Group(SQLModel, table=True):
@@ -65,12 +68,21 @@ class Group(SQLModel, table=True):
     name: str = Field(index=True)
     course: Optional[str] = Field(default=None)
     education_form_id: int = Field(foreign_key="educational_forms.id")
+    educational_form_obj: Optional[Educational_form] = Relationship(
+        back_populates="groups"
+    )
+
     start_education_date: date
     end_education_date: date
 
     view_url: str | None
     institute_id: int = Field(foreign_key="institutes.id")
     institute: Institute = Relationship(back_populates="groups")
+
+    @property
+    def education_form(self) -> str | None:
+        return self.educational_form_obj.name if self.educational_form_obj else None
+
     updated_at: datetime = Field(
         default_factory=get_utc_now, sa_column_kwargs={"onupdate": get_utc_now}
     )

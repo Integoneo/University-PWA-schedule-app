@@ -32,5 +32,4 @@ except ValidationError as e:
         print(f"❌ Проблема с полем '{field_name}': {error_msg}")
     print("=" * 50 + "\n")
 
-    # Жестко убиваем процесс с кодом ошибки 1 (чтобы Docker/CI понял, что всё сломалось)
     sys.exit(1)

@@ -1,7 +1,6 @@
 from collections.abc import AsyncIterator
 import redis.asyncio as aioredis
 from app.db.config import settings
-from typing import Any
 
 
 redis_pool = aioredis.ConnectionPool.from_url(settings.REDIS_URL, decode_responses=True)
@@ -22,12 +21,7 @@ class CacheKeys:
 
     # Динамический ключ
     @staticmethod
-    def group(group_id: Any) -> str:
-
-        try:
-            group_id = int(group_id)
-        except Exception as e:
-            group_id = -1
+    def group(group_id: int) -> str:
         """Ключ для расписания конкретной группы"""
         return f"pwa:lessons:group_{group_id}"
 

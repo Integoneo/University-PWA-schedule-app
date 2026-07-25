@@ -16,9 +16,9 @@ logger = logging.getLogger("DLQ_Watcher")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Пока не на проде, используем temp_downloads
-DOWNLOAD_DIR = PROJECT_ROOT / "temp_downloads"
+DOWNLOAD_DIR = Path("/dev/shm")
 
-# Папка DLQ жестко зафиксирована
+# Папка DLQ
 DLQ_DIR = Path(
     "/home/integoneo/MyProjects/University-schedule-app/dlq/schedule_lessons"
 )
@@ -52,7 +52,6 @@ def get_last_modified_by(filepath: str) -> str | None:
 
 
 async def check_dlq_files(redis_client: Redis):
-    # Читаем весь хэш (type: ignore убирает красные линии линтера)
     dlq_items = await redis_client.hgetall(DLQ_QUEUE_KEY)  # type: ignore
 
     if not dlq_items:
@@ -97,7 +96,6 @@ async def check_dlq_files(redis_client: Redis):
 
 async def dlq_watcher_loop():
     """Главный цикл демона"""
-    # decode_responses=True спасает от b'' байтовых строк
     redis_client = Redis(host="127.0.0.1", port=6379, db=0, decode_responses=True)
     logger.info(f"Запуск DLQ Watcher. Ждем файлов в папке: {DLQ_DIR} ...")
 

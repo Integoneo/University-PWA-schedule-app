@@ -12,9 +12,8 @@ from app.models.schedule import (
 )
 from .schemas import SchedulePayloadSchema
 from .utils import merge_lessons_logic
-import redis.asyncio as aioredis
 from app.db.cache import CacheKeys
-from app.db.config import settings
+from app.utils import redis_client
 
 
 class ORMStateError(Exception):
@@ -28,8 +27,6 @@ async def process_schedule(
     Основная логика обновления расписания.
     Принимает УЖЕ валидированные данные от Pydantic.
     """
-
-    r = aioredis.from_url(settings.REDIS_URL)
 
     # === БЛОК 1: ИНСТИТУТ И ГРУППА ===
     request = select(Institute).where(
@@ -45,6 +42,7 @@ async def process_schedule(
 
     if not edu_form_match:
         edu_form_match = Educational_form(name=schedule.education_form)  # type: ignore
+        session.add(edu_form_match)
         await session.flush()
 
     if not inst_match:
@@ -55,13 +53,17 @@ async def process_schedule(
         )
 
         session.add(inst_match)
-        await r.delete(CacheKeys.institutes)
+        await redis_client.delete(CacheKeys.institutes)
         await session.flush()
 
     # Pyright: Завали ебальник
-    if inst_match.id is None or edu_form_match.id is None:
+    if inst_match.id is None:
         raise ORMStateError(
             f"Аномалия БД: Институту '{schedule.institute}' не присвоен ID"
+        )
+    if edu_form_match.id is None:
+        raise ORMStateError(
+            f"Аномалия БД: Форме обучения '{schedule.education_form}' не присвоен ID"
         )
 
     request = select(Group).where(
@@ -86,7 +88,7 @@ async def process_schedule(
         )
         session.add(group_match)
 
-        await r.delete(CacheKeys.institutes)
+        await redis_client.delete(CacheKeys.institutes)
 
         await session.flush()
         notify_response = (group_match.id, False)  # Группа новая, уведомлять некого
@@ -102,7 +104,7 @@ async def process_schedule(
                 f"Аномалия БД: Группе '{schedule.group}' не присвоен ID"
             )
 
-        await r.delete(CacheKeys.group(group_match.id))
+        await redis_client.delete(CacheKeys.group(group_match.id))
 
         subquery = select(Lesson.id).where(col(Lesson.group_id) == group_match.id)
         await session.execute(
@@ -172,5 +174,3 @@ async def process_schedule(
     await session.commit()
 
     return notify_response  # type: ignore
-
-    # TODO: МЕСТО ДЛЯ ОТПРАВКИ УВЕДОМЛЕНИЯ ОБ ИЗМЕНЕНИИ ПАР

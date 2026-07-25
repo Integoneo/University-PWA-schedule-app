@@ -1,12 +1,15 @@
+from os import wait
+from anyio import sleep
 from fastapi import APIRouter, Depends, Header, Response, status, HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import select, col
 from sqlalchemy.orm import selectinload
-from typing import AsyncIterator, List, Optional
+from typing import List, Optional
 import hashlib
 import json
 import redis.asyncio as aioredis
+import asyncio
 
 from app.db.engine import get_async_session  # Сессия для PostgreSQL
 from app.db.cache import (
@@ -14,8 +17,8 @@ from app.db.cache import (
     CacheKeys,
 )  # Сессия для Redis и ключи для кэша
 
-from app.models.api_dto import Institutes_PWA_schema, Groups_PWA_schema, LessonPWA
-from app.models.schedule import AppConfig, Group, Institute, Lesson
+from app.models.api_dto import GroupScheduleResponse, Institutes_PWA_schema, LessonPWA
+from app.models.schedule import AppConfig, Group, Institute, Lesson, Educational_form
 
 router = APIRouter(prefix="/client", tags=["Client App"])
 
@@ -30,6 +33,7 @@ async def get_app_config(
     """
     Возвращает системный конфиг. Поддерживает HTTP Caching (304 Not Modified) через ETags.
     """
+
     cache_key = CacheKeys.configs
     cached_config_str = None
 
@@ -37,7 +41,6 @@ async def get_app_config(
     try:
         cached_config_str = await redis.get(cache_key)
     except Exception as e:
-        # Если Редис упал, мы не роняем сервер, а просто логируем ошибку в консоль
         print(
             f"⚠️ [Redis Error on GET]: {e}. Блокировка кэша, идем напрямую в Postgres."
         )
@@ -87,6 +90,7 @@ async def institutes_and_groups(
     """
     Возвращает список обьектов институтов и всех групп относящихся к ним
     """
+
     cached_institutes_key = CacheKeys.institutes
     cached_institutes_str = None
 
@@ -101,8 +105,10 @@ async def institutes_and_groups(
     if not cached_institutes_str:
         query = (
             select(Institute)
-            .options(selectinload(Institute.groups))  # pyright: ignore
-            .order_by(Institute.id)  # type: ignore
+            .options(
+                selectinload(Institute.groups).selectinload(Group.educational_form_obj)  # pyright: ignore
+            )
+            .order_by(col(Institute.id))
         )
         result = await session.execute(query)
         institutes_obj = result.scalars().unique().all()
@@ -137,10 +143,10 @@ async def institutes_and_groups(
     return cached_institutes["value"]
 
 
-@router.get("/groups/{group_id}/lessons")
+@router.get("/groups/{group_id}/lessons", response_model=GroupScheduleResponse)
 async def get_group_schedule(
-    group_id: int,
     response: Response,
+    group_id: int,
     if_none_match: Optional[str] = Header(None),
     session: AsyncSession = Depends(get_async_session),
     redis: aioredis.Redis = Depends(get_redis_session),
@@ -152,7 +158,9 @@ async def get_group_schedule(
     cache_key = CacheKeys.group(group_id)
     cached_schedule_str = None
 
-    # 1. Защищенный запрос в Redis
+    if group_id < 1 or group_id > 100_000:
+        raise HTTPException(status_code=404, detail="Группа не найдена")
+    print(group_id)
     try:
         cached_schedule_str = await redis.get(cache_key)
     except Exception as e:
@@ -176,7 +184,7 @@ async def get_group_schedule(
         if not group_obj:
             raise HTTPException(status_code=404, detail="Группа не найдена")
 
-        # ИСПОЛЬЗУЕМ ЧИТ-КОД: Готовый data_hash из базы как ETag
+        # Используем готовый хэш из базы для ETag
         current_ETag = f'"{group_obj.data_hash}"'
 
         # Создаем Pydantic адаптер ТОЛЬКО для списка пар
@@ -186,17 +194,17 @@ async def get_group_schedule(
         # Собираем финальный словарь ответа
         final_dict = {
             "status": group_obj.status.value,  # "ready", "updating" или "error"
+            "start_education_date": group_obj.start_education_date.isoformat(),
+            "end_education_date": group_obj.end_education_date.isoformat(),
             "lessons": adapter.dump_python(pydantic_lessons, mode="json"),
+            "view_url": group_obj.view_url,
         }
 
         # Пакуем для Редиса вместе с ETag
         cached_data = {"value": final_dict, "ETag": current_ETag}
         cached_schedule_bytes = json.dumps(cached_data)
 
-        # 2. Защищенная запись в Redis
         try:
-            # Кэшируем на 1 неделю, так как если расписание изменится,
-            # наш C++ воркер всё равно инвалидирует (удалит) этот ключ при записи!
             await redis.set(cache_key, cached_schedule_bytes, ex=604800)
         except Exception as e:
             print(

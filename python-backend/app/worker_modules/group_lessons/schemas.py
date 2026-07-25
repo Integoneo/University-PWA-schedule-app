@@ -107,9 +107,6 @@ class SchedulePayloadSchema(BaseModel):
     def normalize_educational_form(cls, v: str):
         return v.strip().title()
 
-    # 💥 А ВОТ ТВОЯ НОРМАЛИЗАЦИЯ ИНСТИТУТА 💥
-    # mode='after' означает, что Pydantic уже проверил типы полей,
-    # и теперь мы можем безопасно менять сам объект (self)
     @model_validator(mode="after")
     def normalize_institute_names(self) -> "SchedulePayloadSchema":
         IGNORED_WORDS = {
