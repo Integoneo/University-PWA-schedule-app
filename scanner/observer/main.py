@@ -70,7 +70,7 @@ async def main():
                     print(f"Время цикла сканирования: {perf_counter() - START_TIME}")
 
                     jitter = random.uniform(
-                        1.0, 1.5
+                        80.0, 100.0
                     )  # TODO: Сделать промежуток 80-100 секунд
 
                     await send_tg_alert(

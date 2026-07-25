@@ -14,9 +14,7 @@ DOWNLOADER_QUEUE = "downloader:dowload_queue"
 CPP_QUEUE = "parser:ready_schedules"  # Очередь для плюсового парсера
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DOWNLOAD_DIR = str(
-    PROJECT_ROOT / "temp_downloads"
-)  # Временная папка. В докере поменяю на /dev/shm
+DOWNLOAD_DIR = "/dev/shm"  # Временная папка. В докере поменяю на /dev/shm
 
 
 DOWNLOADER_DLQ = "downloader:DLQ"
