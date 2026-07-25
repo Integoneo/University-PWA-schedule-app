@@ -1,65 +1,105 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { mockSchedule } from '../data/mock'
+import { useRouter } from 'vue-router'
 import BottomSheet from './BottomSheet.vue'
 import { store } from '../store'
+import { api } from '../api'
+
+const router = useRouter()
 
 // === 1. УМНАЯ МАТЕМАТИКА ДАТ И ВРЕМЕНИ ===
-const semesterStartDate = new Date('2026-03-23T00:00:00')
+const semesterStartDate = ref(new Date('2026-03-23T00:00:00')) 
+const anchorIsEven = ref(false) 
+
+// Границы семестра с бэкенда
+const educationStart = ref<Date | null>(null)
+const educationEnd = ref<Date | null>(null)
+
 const selectedDate = ref(new Date())
 const realToday = new Date()
+const currentMinutes = ref(new Date().getHours() * 60 + new Date().getMinutes())
 
-// === переменная открытия шторки групп===
-// === ШТОРКА И ДАННЫЕ ИЗ REDIS ===
+// === ШТОРКА И ДАННЫЕ ИЗ STORE ===
 const isGroupSheetOpen = ref(false)
 
-// Эмуляция того самого хэша из Redis + даты от C++ парсера
-const groupInfo = ref({
-  institute_full_name: 'ИНСТИТУТ ЭКОНОМИКИ И МЕНЕДЖМЕНТА',
-  institute_short_name: null, // Если тут будет null или '', интерфейс сам перестроится
-  study_form: 'ОЧНАЯ ФОРМА ОБУЧЕНИЯ (ДНЕВНАЯ)',
-  file_title: '2 курс',
-  logo_url: 'https://rguk.ru/local/templates/rguk_redesign/images/ieml.svg',
-  semester_dates: '1 сентября — 28 декабря 2026'
+const groupInfo = computed(() => store.groupInfo || {
+  institute_full_name: 'Загрузка...',
+  institute_short_name: null,
+  study_form: '',
+  file_title: '...',
+  logo_url: '',
+  group_name: '...'
 })
 
-
-// Форматируем форму обучения (делаем первую букву заглавной, остальное строчными)
 const formatStudyForm = (str: string) => {
   if (!str) return ''
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
 }
 
-// Реактивная переменная с текущим временем в минутах (от начала суток)
-const currentMinutes = ref(new Date().getHours() * 60 + new Date().getMinutes())
-
-
-// === СИМУЛЯЦИЯ СЕТИ ===
-const isLoading = ref(true) // При первом открытии приложения сразу показываем скелет
-
-// Имитация запроса к твоему бэкенду (Redis -> C++ -> JSON)
-const fetchScheduleData = () => {
-  isLoading.value = true
-  // Ждем 2 секунды и "получаем" данные
-  setTimeout(() => {
-    isLoading.value = false
-  }, 2000)
-}
-
-// Запускаем при загрузке компонента
-onMounted(() => {
-  fetchScheduleData()
-  // ... тут твой старый код таймера
-  timerId = setInterval(() => {
-    const now = new Date()
-    currentMinutes.value = now.getHours() * 60 + now.getMinutes()
-  }, 60000)
+// Красивое форматирование периода обучения для шторки
+const formattedSemesterDates = computed(() => {
+  if (!educationStart.value || !educationEnd.value) return 'Загрузка...'
+  const formatter = new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long' })
+  const start = formatter.format(educationStart.value)
+  const end = formatter.format(educationEnd.value)
+  const year = educationEnd.value.getFullYear()
+  return `${start} — ${end} ${year}`
 })
 
 
-// Обновляем время каждую минуту, чтобы live-эффекты работали в реальном времени
+// === РЕАЛЬНАЯ СЕТЬ (API) ===
+const isLoading = ref(true)
+const allLessons = ref<any[]>([]) 
+
+const fetchScheduleData = async () => {
+  if (!store.groupInfo) {
+    router.push('/')
+    return
+  }
+
+  isLoading.value = true
+  try {
+    const config = await api.getConfig()
+    if (config) {
+      semesterStartDate.value = config.anchorDate
+      anchorIsEven.value = config.isEven
+    }
+
+    const data = await api.getSchedule(store.groupInfo.group_id)
+    allLessons.value = data.lessons || []
+    
+    // Парсим даты начала и конца обучения
+    if (data.start_education_date) educationStart.value = new Date(data.start_education_date)
+    if (data.end_education_date) educationEnd.value = new Date(data.end_education_date)
+    
+    // === УМНЫЙ СДВИГ "СЕГОДНЯ" (ФИКС ДЛЯ КАНИКУЛ) ===
+    if (educationStart.value && educationEnd.value) {
+      const todayTime = realToday.getTime()
+      const startTime = educationStart.value.getTime()
+      const endTime = educationEnd.value.getTime()
+
+      if (todayTime > endTime) {
+        // Лето/каникулы после семестра -> отматываем на последний день учебы
+        selectedDate.value = new Date(educationEnd.value)
+      } else if (todayTime < startTime) {
+        // Каникулы до семестра -> перематываем на первый день учебы
+        selectedDate.value = new Date(educationStart.value)
+      } else {
+        // Идет семестр -> сбрасываем на сегодняшний день (полезно при ручном обновлении)
+        selectedDate.value = new Date(realToday)
+      }
+    }
+    
+  } catch (error) {
+    store.addToast('Не удалось загрузить расписание', 'error')
+    allLessons.value = []
+  } finally {
+    isLoading.value = false
+  }
+}
 let timerId: number
 onMounted(() => {
+  fetchScheduleData()
   timerId = setInterval(() => {
     const now = new Date()
     currentMinutes.value = now.getHours() * 60 + now.getMinutes()
@@ -68,11 +108,11 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timerId))
 
 const isEvenWeek = computed(() => {
-  const start = semesterStartDate.getTime()
+  const start = semesterStartDate.value.getTime()
   const current = selectedDate.value.getTime()
   const diffDays = Math.floor((current - start) / (24 * 60 * 60 * 1000))
   const diffWeeks = Math.floor(diffDays / 7)
-  return diffWeeks % 2 !== 0 
+  return anchorIsEven.value ? (diffWeeks % 2 === 0) : (diffWeeks % 2 !== 0)
 })
 
 const currentWeekDates = computed(() => {
@@ -92,20 +132,31 @@ const currentWeekDates = computed(() => {
 const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 const shortDays = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
 
-// Вспомогательная функция на фронте
-const normalizeStudyForm = (rawForm: string) => {
-  const text = rawForm.toLowerCase()
-  if (text.includes('очн')) return 'Очная'
-  if (text.includes('заоч')) return 'Заочная'
-  if (text.includes('очно-заоч') || text.includes('вечер')) return 'Очно-заочная'
-  return 'Неизвестно'
-}
+// === ЛИМИТЫ И СОСТОЯНИЯ СЕМЕСТРА ===
+const semesterState = computed(() => {
+  if (!educationStart.value || !educationEnd.value) return 'active' // Если дат еще нет - считаем активным
+
+  const current = selectedDate.value.getTime()
+  const start = educationStart.value.getTime()
+  
+  // Конец семестра считаем до последней миллисекунды этого дня
+  const end = new Date(educationEnd.value)
+  end.setHours(23, 59, 59, 999)
+  const endTime = end.getTime()
+
+  if (current < start) return 'before'
+  if (current > endTime) return 'after'
+  return 'active'
+})
 
 // === 2. ФИЛЬТРАЦИЯ И СТЕЙТЫ ПАР ===
 const currentLessons = computed(() => {
+  // Если семестр еще не начался или уже закончился — пар НЕТ, не пытаемся их даже искать
+  if (semesterState.value !== 'active') return []
+
   let jsDay = selectedDate.value.getDay()
   let apiDay = jsDay === 0 ? 6 : jsDay - 1
-  return mockSchedule.lessons
+  return allLessons.value
     .filter((lesson) => lesson.day_of_week === apiDay && lesson.is_even_week === isEvenWeek.value)
     .sort((a, b) => a.start_time.localeCompare(b.start_time))
 })
@@ -115,45 +166,41 @@ const isSameDate = (d1: Date, d2: Date) => {
 }
 const isRealToday = (d: Date) => isSameDate(d, realToday)
 
-// Вычисление стейта пары (past, now, soon, future)
 const getLessonState = (lesson: any) => {
-  // Если это не сегодняшний реальный день - все пары дефолтные (будущее/прошлое нас не волнует)
   if (!isRealToday(selectedDate.value)) return 'future'
-
   const parseTime = (timeStr: string) => {
     const [h, m] = timeStr.split(':').map(Number)
     return h * 60 + m
   }
-  
   const start = parseTime(lesson.start_time)
   const end = parseTime(lesson.end_time)
   const now = currentMinutes.value
 
   if (now > end) return 'past'
   if (now >= start && now <= end) return 'now'
-  // Если до пары осталось 15 минут или меньше
   if (start - now > 0 && start - now <= 15) return 'soon'
-  
   return 'future'
 }
 
-// === 3. ЛОГИКА СВАЙПОВ ===
+// === 3. ЛОГИКА СВАЙПОВ (Освобожденная) ===
 const transitionName = ref('slide-left')
 const touchStartX = ref(0)
 const touchStartY = ref(0)
 
 const selectDate = (date: Date) => {
+  // Никаких тостов и блокировок, просто листаем!
   if (date.getTime() > selectedDate.value.getTime()) transitionName.value = 'slide-left'
   else if (date.getTime() < selectedDate.value.getTime()) transitionName.value = 'slide-right'
   selectedDate.value = date
 }
 
 const changeDay = (delta: number) => {
-  transitionName.value = delta > 0 ? 'slide-left' : 'slide-right'
   const newDate = new Date(selectedDate.value)
   newDate.setDate(newDate.getDate() + delta)
+  transitionName.value = delta > 0 ? 'slide-left' : 'slide-right'
   selectedDate.value = newDate
 }
+
 
 const onTouchStart = (e: TouchEvent) => {
   touchStartX.value = e.changedTouches[0].screenX
@@ -170,6 +217,7 @@ const onTouchEnd = (e: TouchEvent) => {
 
 // === 4. ВСПОМОГАТЕЛЬНЫЕ ===
 const getBadgeColor = (type: string) => {
+  if (!type) return 'bg-slate-500/10 text-slate-400 border-slate-500/20'
   const t = type.toLowerCase()
   if (t.includes('лек')) return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
   if (t.includes('пр')) return 'bg-orange-500/10 text-orange-400 border-orange-500/20'
@@ -183,7 +231,6 @@ const formatPlace = (place: string) => {
   return match ? { main: match[1], sub: match[2] } : { main: place, sub: '' }
 }
 </script>
-
 <template>
   <div class="flex flex-col h-full bg-slate-950 text-slate-50 overflow-hidden">
     
@@ -197,10 +244,10 @@ const formatPlace = (place: string) => {
           <div class="w-5 h-5 rounded-md bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
             <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
           </div>
-          <span class="font-bold text-slate-200 tracking-wide text-sm">Д-101</span>
+          <!-- УБРАЛИ ХАРДКОД Д-101 -->
+          <span class="font-bold text-slate-200 tracking-wide text-sm">{{ groupInfo.group_name }}</span>
           <svg class="w-3.5 h-3.5 text-slate-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
         </button>
-
         <!-- Правый блок: Бейдж недели + Кнопка обновления -->
         <div class="flex items-center gap-2">
           <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border bg-slate-900/50" :class="isEvenWeek ? 'border-indigo-500/20' : 'border-emerald-500/20'">
@@ -235,11 +282,11 @@ const formatPlace = (place: string) => {
           class="absolute top-1 bottom-1 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-500/30 transition-transform duration-300 cubic-bezier(0.4, 0, 0.2, 1)"
           :style="{ width: 'calc((100% - 8px) / 7)', transform: `translateX(calc(${selectedDate.getDay() === 0 ? 6 : selectedDate.getDay() - 1} * 100%))` }"
         ></div>
-        <button
-          v-for="(date, index) in currentWeekDates" :key="index" @click="selectDate(date)"
-          class="relative z-10 flex-1 py-1.5 flex flex-col justify-center items-center transition-all duration-300 touch-manipulation rounded-xl overflow-hidden"
-          :class="isSameDate(selectedDate, date) ? 'text-white' : 'text-slate-400 hover:text-slate-300'"
-        >
+          <button
+            v-for="(date, index) in currentWeekDates" :key="index" @click="selectDate(date)"
+            class="relative z-10 flex-1 py-1.5 flex flex-col justify-center items-center transition-all duration-300 touch-manipulation rounded-xl overflow-hidden"
+            :class="isSameDate(selectedDate, date) ? 'text-white' : 'text-slate-400 hover:text-slate-300'"
+            >
           <div v-if="isRealToday(date)" class="absolute inset-0 pointer-events-none" style="background: radial-gradient(circle at center, rgba(59, 192, 241, 0.28) 5%, transparent 76%);"></div>
           <span class="relative z-10 text-[10px] font-medium uppercase tracking-wider mb-0.5">{{ shortDays[date.getDay()] }}</span>
           <span class="relative z-10 text-base font-bold leading-none">{{ date.getDate() }}</span>
@@ -277,13 +324,25 @@ const formatPlace = (place: string) => {
             </div>
           </template>
 
-          <!-- === СТЕЙТ 2: ЗАГРУЗКА ПРОШЛА, НО ДЕНЬ ПУСТОЙ === -->
+        <!-- === СТЕЙТ 2: ДО НАЧАЛА СЕМЕСТРА === -->
+          <div v-else-if="semesterState === 'before'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
+            <div class="w-20 h-20 rounded-full bg-slate-900/50 border border-slate-800 flex items-center justify-center text-3xl">🏖️</div>
+            <p class="text-slate-400 text-sm font-medium">Семестр еще не начался.<br>Можно со спокойной душой кайфовать!</p>
+          </div>
+
+          <!-- === СТЕЙТ 3: ПОСЛЕ ОКОНЧАНИЯ СЕМЕСТРА === -->
+          <div v-else-if="semesterState === 'after'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
+            <div class="w-20 h-20 rounded-full bg-slate-900/50 border border-slate-800 flex items-center justify-center text-3xl">🎓</div>
+            <p class="text-slate-400 text-sm font-medium">Учеба всё! Желаем удачи на сессии<br>(или классного отдыха).</p>
+          </div>
+
+          <!-- === СТЕЙТ 4: ОБЫЧНЫЙ ДЕНЬ БЕЗ ПАР ВНУТРИ СЕМЕСТРА === -->
           <div v-else-if="currentLessons.length === 0" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
             <div class="w-20 h-20 rounded-full bg-slate-900/50 border border-slate-800 flex items-center justify-center text-3xl">😴</div>
             <p class="text-slate-400 text-sm font-medium">В этот день пар нет.<br>Можно отдохнуть!</p>
           </div>
 
-          <!-- === СТЕЙТ 3: ЗАГРУЗКА ПРОШЛА, ЕСТЬ ПАРЫ (Твой код) === -->
+          <!-- === СТЕЙТ 5: ЗАГРУЗКА ПРОШЛА, ЕСТЬ ПАРЫ === -->
           <template v-else>
             <div 
               v-for="lesson in currentLessons" :key="lesson.id" 
@@ -372,17 +431,18 @@ const formatPlace = (place: string) => {
 
       <!-- КОНТЕНТ ШТОРКИ -->
       
-      <!-- Главная информационная карточка -->
+        <!-- Главная информационная карточка -->
       <div class="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-4 flex flex-col gap-4">
         <!-- Институт -->
         <div class="flex items-center gap-3.5">
-          <div class="w-11 h-11 rounded-xl bg-slate-800/50 border border-slate-700/50 flex items-center justify-center shrink-0 overflow-hidden p-2">
-            <img v-if="groupInfo.logo_url" :src="groupInfo.logo_url" class="w-full h-full object-contain filter invert opacity-80" alt="Логотип" />
-            <svg v-else class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" /></svg>
+          <!-- Иконка как в Onboarding (Белая) -->
+          <div class="w-11 h-11 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0 p-1.5">
+            <img v-if="groupInfo.logo_url" :src="groupInfo.logo_url" class="w-full h-full object-contain" alt="Логотип" />
+            <svg v-else class="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" /></svg>
           </div>
           <div class="flex flex-col justify-center min-w-0 pr-2">
             <span v-if="groupInfo.institute_short_name" class="text-[11px] text-indigo-400 font-bold uppercase tracking-widest mb-0.5">{{ groupInfo.institute_short_name }}</span>
-            <span class="text-xs font-semibold text-slate-200 leading-tight uppercase truncate">{{ groupInfo.institute_full_name }}</span>
+            <span class="text-xs font-semibold text-slate-200 leading-tight uppercase line-clamp-2 break-words">{{ groupInfo.institute_full_name }}</span>
           </div>
         </div>
 
@@ -398,7 +458,8 @@ const formatPlace = (place: string) => {
           </div>
           <div class="col-span-2 flex flex-col pt-3 border-t border-slate-700/30">
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Период обучения</span>
-            <span class="text-sm font-medium text-slate-200">{{ groupInfo.semester_dates }}</span>
+            <!-- ДИНАМИЧЕСКИЕ ДАТЫ -->
+            <span class="text-sm font-medium text-slate-200">{{ formattedSemesterDates }}</span>
           </div>
         </div>
       </div>

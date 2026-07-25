@@ -1,6 +1,5 @@
-// src/api/index.ts
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://192.168.31.233:8000/api/v1/client/'
+const API_URL = import.meta.env.VITE_API_URL || 'http://192.168.31.233:8000/api/v1/client'
 
 // === Утилиты для нормализации данных ===
 export const normalizeStudyForm = (rawForm: string) => {
