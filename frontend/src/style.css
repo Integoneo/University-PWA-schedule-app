@@ -13,3 +13,22 @@ html, body, #app {
   overscroll-behavior: none; /* Убиваем "резинку" и pull-to-refresh на мобилках */
   background-color: #020617; /* Подставляем цвет slate-950, чтобы фон не моргал белым при загрузке */
 }
+
+/* === ГЛОБАЛЬНЫЕ НАСТРОЙКИ PWA === */
+body {
+  /* Запрещаем выделение текста везде */
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* IE10+/Edge */
+  user-select: none; /* Стандарт */
+  
+  /* Убиваем всплывающее меню лупы при долгом тапе на iOS */
+  -webkit-touch-callout: none; 
+}
+
+/* ОБЯЗАТЕЛЬНО возвращаем выделение для полей ввода! */
+input, 
+textarea {
+  -webkit-user-select: auto;
+  user-select: auto;
+}

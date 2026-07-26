@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BottomSheet from './BottomSheet.vue'
 import { store } from '../store'
@@ -18,6 +18,10 @@ const educationEnd = ref<Date | null>(null)
 const selectedDate = ref(new Date())
 const realToday = new Date()
 const currentMinutes = ref(new Date().getHours() * 60 + new Date().getMinutes())
+
+// === EXCEL ОРИГИНАЛ ===
+const isExcelModalOpen = ref(false)
+const originalExcelUrl = ref<string | null>(null)
 
 // === ШТОРКА И ДАННЫЕ ИЗ STORE ===
 const isGroupSheetOpen = ref(false)
@@ -47,17 +51,39 @@ const formattedSemesterDates = computed(() => {
 })
 
 
+// Переменная живет ВНЕ функции, чтобы помнить время последнего клика
+let lastManualFetch = 0 
+
 // === РЕАЛЬНАЯ СЕТЬ (API) ===
 const isLoading = ref(true)
 const allLessons = ref<any[]>([]) 
+const isOffline = ref(false)
 
-const fetchScheduleData = async () => {
+const fetchScheduleData = async (isManual = false) => {
   if (!store.groupInfo) {
     router.push('/')
     return
   }
 
+  // === 1. ГЕНИАЛЬНАЯ ЗАЩИТА ОТ СПАМА (ФЕЙКОВАЯ РАБОТА) ===
+  if (isManual) {
+    const now = Date.now()
+    // Если с прошлого обновления прошло меньше 5 секунд (5000 мс)
+    if (now - lastManualFetch < 5000) {
+      isLoading.value = true
+      // Имитируем бурную деятельность на 400 миллисекунд
+      await new Promise(res => setTimeout(res, 400)) 
+      store.addToast('Расписание актуально', 'success')
+      isLoading.value = false
+      return // ПРЕРЫВАЕМ ФУНКЦИЮ! До твоего сервера запрос не долетит.
+    }
+    lastManualFetch = now
+  }
+
   isLoading.value = true
+  isOffline.value = false
+  const startTime = Date.now() // Засекаем время старта реального запроса
+  
   try {
     const config = await api.getConfig()
     if (config) {
@@ -68,36 +94,59 @@ const fetchScheduleData = async () => {
     const data = await api.getSchedule(store.groupInfo.group_id)
     allLessons.value = data.lessons || []
     
-    // Парсим даты начала и конца обучения
+    // Сохраняем ссылку на эксель
+    originalExcelUrl.value = data.view_url || null
+    
     if (data.start_education_date) educationStart.value = new Date(data.start_education_date)
     if (data.end_education_date) educationEnd.value = new Date(data.end_education_date)
     
-    // === УМНЫЙ СДВИГ "СЕГОДНЯ" (ФИКС ДЛЯ КАНИКУЛ) ===
     if (educationStart.value && educationEnd.value) {
       const todayTime = realToday.getTime()
-      const startTime = educationStart.value.getTime()
-      const endTime = educationEnd.value.getTime()
+      const startTimeSemester = educationStart.value.getTime()
+      const endTimeSemester = educationEnd.value.getTime()
 
-      if (todayTime > endTime) {
-        // Лето/каникулы после семестра -> отматываем на последний день учебы
+      if (todayTime > endTimeSemester) {
         selectedDate.value = new Date(educationEnd.value)
-      } else if (todayTime < startTime) {
-        // Каникулы до семестра -> перематываем на первый день учебы
+      } else if (todayTime < startTimeSemester) {
         selectedDate.value = new Date(educationStart.value)
       } else {
-        // Идет семестр -> сбрасываем на сегодняшний день (полезно при ручном обновлении)
         selectedDate.value = new Date(realToday)
+      }
+    }
+
+    // === 2. МИНИМАЛЬНОЕ ВРЕМЯ АНИМАЦИИ (Красота) ===
+    if (isManual) {
+      const elapsed = Date.now() - startTime
+      // Если запрос выполнился слишком быстро (например за 10мс из кэша),
+      // докручиваем таймер, чтобы анимация длилась ровно 500мс
+      if (elapsed < 800) {
+        await new Promise(res => setTimeout(res, 800 - elapsed))
+      }
+    }
+
+    // === ЛОГИКА РАЗГОВОРЧИВОЙ КНОПКИ ===
+    if (isManual) {
+      if (data._meta.status === 'actual') {
+        store.addToast('Расписание актуально', 'success') 
+      } else if (data._meta.status === 'updated') {
+        store.addToast('Расписание обновлено', 'success')
+      } else if (data._meta.status === 'offline') {
+        store.addToast('Нет сети. Показана кэшированная версия', 'error')
       }
     }
     
   } catch (error) {
-    store.addToast('Не удалось загрузить расписание', 'error')
+    isOffline.value = true
     allLessons.value = []
   } finally {
     isLoading.value = false
   }
 }
+
+
 let timerId: number
+
+
 onMounted(() => {
   fetchScheduleData()
   timerId = setInterval(() => {
@@ -182,6 +231,21 @@ const getLessonState = (lesson: any) => {
   return 'future'
 }
 
+
+
+// === ЕДИНЫЙ КОНТРОЛЛЕР СОСТОЯНИЙ (STATE MACHINE) ===
+// Эта штука гарантирует, что Vue не запутается в v-if'ах при перерисовках
+const currentState = computed(() => {
+  if (isLoading.value) return 'loading'
+  if (isOffline.value) return 'offline'
+  if (semesterState.value === 'before') return 'before'
+  if (semesterState.value === 'after') return 'after'
+  if (currentLessons.value.length === 0) return 'empty'
+  return 'lessons'
+})
+
+
+
 // === 3. ЛОГИКА СВАЙПОВ (Освобожденная) ===
 const transitionName = ref('slide-left')
 const touchStartX = ref(0)
@@ -215,6 +279,61 @@ const onTouchEnd = (e: TouchEvent) => {
   else if (deltaX < -40) changeDay(1)
 }
 
+// === ФУНКЦИЯ КОПИРОВАНИЯ РАСПИСАНИЯ ===
+const copyDaySchedule = async () => {
+  if (currentLessons.value.length === 0) return
+
+  const dateStr = `${selectedDate.value.getDate()} ${monthNames[selectedDate.value.getMonth()].toLowerCase()}`
+  let text = `📅 Расписание на ${dateStr} (${shortDays[selectedDate.value.getDay()]}):\n\n`
+
+  currentLessons.value.forEach(l => {
+    text += `🕒 ${l.start_time.slice(0,5)} - ${l.end_time.slice(0,5)} | ${l.lesson_name} (${l.type_of_lesson})\n`
+    if (l.classroom || l.educational_place) {
+      const place = formatPlace(l.educational_place).main
+      text += `📍 ${l.classroom ? l.classroom + ' ' : ''}${place ? '(' + place + ')' : ''}\n`
+    }
+    if (l.teachers && l.teachers.length > 0) {
+      text += `👨‍🏫 ${l.teachers.map((t: any) => t.name).join(', ')}\n`
+    }
+    text += `\n`
+  })
+
+  // 1. Пытаемся использовать современный API (Сработает на HTTPS/localhost)
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text.trim())
+      store.addToast('Расписание скопировано', 'success')
+      return
+    } catch (err) {
+      console.warn('Clipboard API failed, trying fallback...', err)
+    }
+  }
+
+  // 2. Фолбэк для HTTP (твой случай с 192.168.x.x)
+  try {
+    const textArea = document.createElement("textarea")
+    textArea.value = text.trim()
+    // Прячем элемент за экраном
+    textArea.style.position = "fixed"
+    textArea.style.left = "-999999px"
+    textArea.style.top = "-999999px"
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    
+    const successful = document.execCommand('copy')
+    textArea.remove()
+    
+    if (successful) {
+      store.addToast('Расписание скопировано', 'success')
+    } else {
+      store.addToast('Не удалось скопировать', 'error')
+    }
+  } catch (err) {
+    store.addToast('Ошибка копирования', 'error')
+  }
+}
+
 // === 4. ВСПОМОГАТЕЛЬНЫЕ ===
 const getBadgeColor = (type: string) => {
   if (!type) return 'bg-slate-500/10 text-slate-400 border-slate-500/20'
@@ -239,14 +358,14 @@ const formatPlace = (place: string) => {
 <!-- Верхний ряд шапки: Группа и бейдж недели -->
       <div class="flex items-start justify-between">
         
-        <!-- Кнопка-селектор группы -->
-        <button @click="isGroupSheetOpen = true" class="flex items-center gap-1.5 px-3 py-1.5 -ml-3 rounded-xl hover:bg-slate-900/80 transition-colors">
-          <div class="w-5 h-5 rounded-md bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+        <!-- Кнопка-селектор группы (Теперь не ломается от длинных имен) -->
+        <button @click="isGroupSheetOpen = true" class="flex items-center gap-1.5 px-3 py-1.5 -ml-3 rounded-xl hover:bg-slate-900/80 transition-colors max-w-[55%]">
+          <div class="w-5 h-5 rounded-md bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0 text-indigo-400">
             <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
           </div>
-          <!-- УБРАЛИ ХАРДКОД Д-101 -->
-          <span class="font-bold text-slate-200 tracking-wide text-sm">{{ groupInfo.group_name }}</span>
-          <svg class="w-3.5 h-3.5 text-slate-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+          <!-- ДОБАВЛЕН truncate -->
+          <span class="font-bold text-slate-200 tracking-wide text-sm truncate">{{ groupInfo.group_name }}</span>
+          <svg class="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
         </button>
         <!-- Правый блок: Бейдж недели + Кнопка обновления -->
         <div class="flex items-center gap-2">
@@ -257,9 +376,9 @@ const formatPlace = (place: string) => {
             </span>
           </div>
 
-          <!-- Кнопка обновления (крутится пока isLoading = true) -->
+        <!-- Кнопка обновления (крутится пока isLoading = true) -->
           <button 
-            @click="fetchScheduleData"
+            @click="fetchScheduleData(true)" 
             :disabled="isLoading"
             class="p-1.5 rounded-lg border border-slate-800 bg-slate-900/50 text-slate-400 transition-colors"
             :class="isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800 hover:text-slate-200 active:scale-95'"
@@ -275,9 +394,11 @@ const formatPlace = (place: string) => {
       </h2>
     </div>
 
-    <!-- Монолитная труба дней -->
-    <div class="px-4 py-2">
-      <div class="relative flex w-full bg-slate-900/60 rounded-2xl p-1 backdrop-blur-sm border border-slate-800">
+<!-- Монолитная труба дней -->
+    <div class="px-4 py-2 relative flex flex-col items-end">
+      
+      <!-- ГЛАВНАЯ ТРУБА (z-10, чтобы быть ПОВЕРХ закладки) -->
+      <div class="relative flex w-full bg-slate-900/60 rounded-2xl p-1 backdrop-blur-sm border border-slate-800 z-10">
         <div 
           class="absolute top-1 bottom-1 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-500/30 transition-transform duration-300 cubic-bezier(0.4, 0, 0.2, 1)"
           :style="{ width: 'calc((100% - 8px) / 7)', transform: `translateX(calc(${selectedDate.getDay() === 0 ? 6 : selectedDate.getDay() - 1} * 100%))` }"
@@ -292,58 +413,86 @@ const formatPlace = (place: string) => {
           <span class="relative z-10 text-base font-bold leading-none">{{ date.getDate() }}</span>
         </button>
       </div>
-    </div>
+  <!-- Внутренний контент (он отобразится, но не будет раздвигать верстку) -->
+      <!-- ЗАКЛАДКА (z-0, прячется ПОД трубой, вылезает за счет -mt-2 и pt-3) -->
+      <Transition name="fade">
+        <div v-if="currentState === 'lessons'" class="w-full h-0 relative">
+          <button
+            @click="copyDaySchedule"
+            class="
+              absolute top-0 right-4 z-1 flex items-center gap-1 px-3 
+              -mt-2 pt-3 pb-1.5 /* -mt-2 затягивает кнопку под трубу, pt-3 компенсирует это для текста */
+              rounded-b-xl backdrop-blur-md transition-all active:scale-95
+              bg-slate-900/40 border border-slate-800/90 border-t-0 shadow-sm
+              text-slate-500 hover:text-slate-300 hover:bg-slate-800/60
+            "
+          >
+            <svg class="w-4 h-4 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+          </button>
+        </div>
+      </Transition>
 
-    <!-- Список пар -->
+
+
+
+    </div>
     <div class="flex-1 relative overflow-hidden" @touchstart="onTouchStart" @touchend="onTouchEnd">
-<!-- Список пар -->
+    <!-- Список пар -->
       <Transition :name="transitionName" mode="out-in">
         <div :key="selectedDate.getTime()" class="absolute inset-0 px-4 py-4 overflow-y-auto space-y-4 pb-24 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] overscroll-y-contain [-webkit-overflow-scrolling:touch]">
           
-          <!-- === СТЕЙТ 1: ИДЕТ ЗАГРУЗКА (СКЕЛЕТЫ) === -->
-          <template v-if="isLoading">
+          <!-- СТЕЙТ 1: ЗАГРУЗКА -->
+          <div v-if="currentState === 'loading'" class="flex flex-col gap-4">
             <div v-for="i in 4" :key="'skeleton-'+i" class="relative flex rounded-3xl p-4 bg-slate-900/40 border border-slate-800/40 shadow-sm animate-pulse">
-              <!-- Левая колонка (время) -->
               <div class="w-[4.5rem] flex flex-col items-center pr-3 border-r border-slate-800/30 shrink-0 gap-2.5 pt-1 pb-1">
                 <div class="h-4 w-11 bg-slate-700/50 rounded-md"></div>
                 <div class="h-3 w-9 bg-slate-800/80 rounded-md"></div>
                 <div class="mt-auto h-4 w-full bg-slate-800/60 rounded-md"></div>
               </div>
-              <!-- Правая колонка (детали) -->
               <div class="flex-1 pl-4 flex flex-col justify-center py-1 gap-3.5">
                 <div class="h-3.5 w-16 bg-slate-700/40 rounded-md"></div>
                 <div class="space-y-2">
                   <div class="h-4 w-11/12 bg-slate-700/60 rounded-md"></div>
                   <div class="h-4 w-2/3 bg-slate-700/40 rounded-md"></div>
                 </div>
-                <div class="space-y-2 mt-1">
-                  <div class="h-3 w-1/3 bg-slate-800 rounded-md"></div>
-                  <div class="h-3 w-1/2 bg-slate-800 rounded-md"></div>
-                </div>
               </div>
             </div>
-          </template>
+          </div>
 
-        <!-- === СТЕЙТ 2: ДО НАЧАЛА СЕМЕСТРА === -->
-          <div v-else-if="semesterState === 'before'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
+          <!-- СТЕЙТ 1.5: ОФФЛАЙН (Если нет кэша) -->
+          <div v-else-if="currentState === 'offline'" class="mt-12 flex flex-col items-center justify-center text-center space-y-4 px-4">
+            <div class="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+              <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18M9 9l3 3m0 0l3-3m-3 3v4" /></svg>
+            </div>
+            <div class="flex flex-col gap-1">
+              <h3 class="text-white font-bold text-lg">Нет подключения</h3>
+              <p class="text-slate-400 text-sm">Расписание еще не загружено, а интернета нет.</p>
+            </div>
+            <button @click="fetchScheduleData" class="mt-2 px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl border border-slate-700 transition-colors active:scale-95">
+              Обновить
+            </button>
+          </div>
+
+          <!-- СТЕЙТ 2: ДО СЕМЕСТРА -->
+          <div v-else-if="currentState === 'before'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
             <div class="w-20 h-20 rounded-full bg-slate-900/50 border border-slate-800 flex items-center justify-center text-3xl">🏖️</div>
             <p class="text-slate-400 text-sm font-medium">Семестр еще не начался.<br>Можно со спокойной душой кайфовать!</p>
           </div>
 
-          <!-- === СТЕЙТ 3: ПОСЛЕ ОКОНЧАНИЯ СЕМЕСТРА === -->
-          <div v-else-if="semesterState === 'after'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
+          <!-- СТЕЙТ 3: ПОСЛЕ СЕМЕСТРА -->
+          <div v-else-if="currentState === 'after'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
             <div class="w-20 h-20 rounded-full bg-slate-900/50 border border-slate-800 flex items-center justify-center text-3xl">🎓</div>
             <p class="text-slate-400 text-sm font-medium">Учеба всё! Желаем удачи на сессии<br>(или классного отдыха).</p>
           </div>
 
-          <!-- === СТЕЙТ 4: ОБЫЧНЫЙ ДЕНЬ БЕЗ ПАР ВНУТРИ СЕМЕСТРА === -->
-          <div v-else-if="currentLessons.length === 0" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
+          <!-- СТЕЙТ 4: ПУСТОЙ ДЕНЬ -->
+          <div v-else-if="currentState === 'empty'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
             <div class="w-20 h-20 rounded-full bg-slate-900/50 border border-slate-800 flex items-center justify-center text-3xl">😴</div>
             <p class="text-slate-400 text-sm font-medium">В этот день пар нет.<br>Можно отдохнуть!</p>
           </div>
 
-          <!-- === СТЕЙТ 5: ЗАГРУЗКА ПРОШЛА, ЕСТЬ ПАРЫ === -->
-          <template v-else>
+          <!-- СТЕЙТ 5: ЕСТЬ ПАРЫ -->
+          <div v-else-if="currentState === 'lessons'" class="flex flex-col gap-4">
             <div 
               v-for="lesson in currentLessons" :key="lesson.id" 
               class="relative flex rounded-3xl p-4 backdrop-blur-md transition-all duration-500"
@@ -407,8 +556,7 @@ const formatPlace = (place: string) => {
                 </div>
               </div>
             </div>
-          </template>
-
+          </div>
         </div>
       </Transition>
       <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pointer-events-none z-30"></div>
@@ -417,17 +565,20 @@ const formatPlace = (place: string) => {
 <!-- === УНИВЕРСАЛЬНАЯ ШТОРКА ГРУППЫ === -->
     <BottomSheet :is-open="isGroupSheetOpen" @close="isGroupSheetOpen = false">
       
-      <!-- ЗОНА СВАЙПА: Заголовок шторки -->
+    <!-- ЗОНА СВАЙПА: Заголовок шторки -->
       <template #header>
         <div class="flex items-center justify-between pointer-events-none mb-2">
-          <h2 class="text-2xl font-bold text-white tracking-tight">Группа {{ store.groupInfo?.group_name || 'Д-101' }}</h2>
-          <button @click.stop="isGroupSheetOpen = false" class="p-2 -mr-2 rounded-full text-slate-400 pointer-events-auto active:scale-95 transition-transform">
+          <!-- ДОБАВЛЕН break-words, уменьшен шрифт для конских названий -->
+          <h2 class="text-xl pr-4 font-bold text-white tracking-tight break-words">Группа {{ groupInfo?.group_name || 'Д-101' }}</h2>
+          <button @click.stop="isGroupSheetOpen = false" class="p-2 -mr-2 rounded-full text-slate-400 pointer-events-auto active:scale-95 transition-transform shrink-0">
             <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
       </template>
+
+      <!-- КОНТЕНТ ШТОРКИ (Оставляешь свою карточку Института как есть) -->
 
       <!-- КОНТЕНТ ШТОРКИ -->
       
@@ -464,25 +615,93 @@ const formatPlace = (place: string) => {
         </div>
       </div>
 
-      <!-- КНОПКА "В ИЗБРАННОЕ" -->
-      <!-- Показываем её, если в Store есть выбранная группа -->
-      <div v-if="store.groupInfo" class="mt-4">
+    <!-- КНОПКА ОРИГИНАЛЬНОГО РАСПИСАНИЯ -->
+      <div v-if="originalExcelUrl" class="mt-4">
         <button 
-          @click="store.toggleFavorite(store.groupInfo); store.addToast(store.isFavorite(store.groupInfo.group_id) ? 'Добавлено в избранное' : 'Удалено из избранного', 'success')"
-          class="w-full py-3.5 flex items-center justify-center gap-2 rounded-xl transition-colors font-bold text-sm active:scale-[0.98]"
-          :class="store.isFavorite(store.groupInfo.group_id) 
-            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
-            : 'bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700'"
+          @click="isExcelModalOpen = true"
+          class="w-full py-3.5 flex items-center justify-center gap-2 rounded-xl transition-colors font-bold text-sm active:scale-[0.98] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20"
         >
-          <!-- Иконка Звезды (Закрашенная, если в избранном, иначе контурная) -->
-          <svg class="w-5 h-5" :fill="store.isFavorite(store.groupInfo.group_id) ? 'currentColor' : 'none'" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          {{ store.isFavorite(store.groupInfo.group_id) ? 'В избранном' : 'Добавить в избранное' }}
+          Оригинал от ВУЗа (Excel)
         </button>
       </div>
 
     </BottomSheet>
+
+<!-- === ПОЛНОЭКРАННОЕ ОКНО EXCEL === -->
+    <!-- Используем Transition для красивого появления поверх всего -->
+    <Transition name="fade">
+      <div v-if="isExcelModalOpen" class="fixed inset-0 z-[100] flex flex-col bg-slate-950">
+        
+        <!-- Шапка модалки -->
+        <div class="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0 shadow-md z-10">
+          <div class="flex items-center gap-3 pr-4 overflow-hidden">
+             <div class="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-500 shrink-0">
+               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+             </div>
+            <h3 class="text-white font-bold text-[15px] truncate">Официальное расписание</h3>
+          </div>
+          <button @click="isExcelModalOpen = false" class="p-2 -mr-2 rounded-full text-slate-400 hover:bg-slate-800 hover:text-white active:scale-95 transition-all shrink-0">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <!-- Контейнер для iframe (flex-1 занимает всю оставшуюся высоту) -->
+        <div class="flex-1 w-full bg-slate-900 relative">
+          <!-- Скелетон загрузки (крутится под iframe, пока тот грузится) -->
+          <div class="absolute inset-0 flex flex-col items-center justify-center space-y-4 opacity-50">
+            <svg class="w-8 h-8 animate-spin text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span class="text-sm font-semibold text-slate-400">Загрузка документа...</span>
+          </div>
+
+          <!-- Сам iframe -->
+          <!-- z-10 перекрывает скелетон, как только прогрузится -->
+          <iframe 
+            :src="originalExcelUrl" 
+            class="absolute inset-0 w-full h-full border-0 z-10 bg-white" 
+            allowfullscreen
+          ></iframe>
+        </div>
+        
+      </div>
+    </Transition>
+
   </div>
 </template>
+<style scoped>
+/* Общие настройки скорости и плавности (как в iOS) */
+.slide-left-enter-active,
+.slide-left-leave-active,
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
+/* === АНИМАЦИЯ ВПЕРЕД (Свайп влево, следующий день) === */
+/* Новый день вылетает справа */
+.slide-left-enter-from {
+  opacity: 0;
+  transform: translateX(30px);
+}
+/* Старый день улетает влево */
+.slide-left-leave-to {
+  opacity: 0;
+  transform: translateX(-30px);
+}
+
+/* === АНИМАЦИЯ НАЗАД (Свайп вправо, прошлый день) === */
+/* Новый день вылетает слева */
+.slide-right-enter-from {
+  opacity: 0;
+  transform: translateX(-30px);
+}
+/* Старый день улетает вправо */
+.slide-right-leave-to {
+  opacity: 0;
+  transform: translateX(30px);
+}
+</style>

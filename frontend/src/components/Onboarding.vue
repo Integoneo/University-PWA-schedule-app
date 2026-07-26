@@ -297,7 +297,7 @@ const formatText = (str: string) => {
               :value="searchQuery"
               @input="searchQuery = ($event.target as HTMLInputElement).value"
               type="text" 
-              placeholder="Найти группу (например, ПМИ-1)" 
+              placeholder="Найти свою группу" 
               class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl py-3.5 pl-12 pr-10 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:bg-slate-900 transition-all shadow-sm"
             />
             <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>

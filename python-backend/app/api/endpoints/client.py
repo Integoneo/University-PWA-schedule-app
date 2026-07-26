@@ -160,7 +160,6 @@ async def get_group_schedule(
 
     if group_id < 1 or group_id > 100_000:
         raise HTTPException(status_code=404, detail="Группа не найдена")
-    print(group_id)
     try:
         cached_schedule_str = await redis.get(cache_key)
     except Exception as e:
