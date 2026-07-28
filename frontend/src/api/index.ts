@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://192.168.31.233:8000/api/v1/client'
+const API_URL = import.meta.env.VITE_API_URL || '/api/v1/client'
 
 export const normalizeStudyForm = (rawForm: string) => {
   if (!rawForm) return 'Неизвестно'

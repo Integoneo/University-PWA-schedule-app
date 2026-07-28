@@ -94,7 +94,6 @@ const promptClearCache = () => {
               <span class="text-[10px] text-slate-500 truncate max-w-[150px]">{{ fav.institute_short_name || fav.institute_full_name }}</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
-              <button @click="makePrimary(fav)" class="px-3 py-1.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-xs font-bold active:scale-95 transition-transform">Сделать осн.</button>
               <button @click="removeFavorite(fav)" class="p-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg active:scale-95 transition-transform"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
             </div>
           </div>

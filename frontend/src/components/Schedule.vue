@@ -26,7 +26,7 @@ const originalExcelUrl = ref<string | null>(null)
 // === ШТОРКА И ДАННЫЕ ИЗ STORE ===
 const isGroupSheetOpen = ref(false)
 
-const groupInfo = computed(() => store.groupInfo || {
+const groupInfo = computed(() => store.currentViewingGroup || {
   institute_full_name: 'Загрузка...',
   institute_short_name: null,
   study_form: '',
@@ -51,38 +51,47 @@ const formattedSemesterDates = computed(() => {
 })
 
 
-// Переменная живет ВНЕ функции, чтобы помнить время последнего клика
-let lastManualFetch = 0 
 
 // === РЕАЛЬНАЯ СЕТЬ (API) ===
 const isLoading = ref(true)
 const allLessons = ref<any[]>([]) 
 const isOffline = ref(false)
 
+// Переменные живут ВНЕ функции, чтобы помнить время и СТАТУС последнего клика
+let lastManualFetch = 0 
+let lastFetchStatus = 'actual' // Добавили память о последнем статусе сети
+
 const fetchScheduleData = async (isManual = false) => {
-  if (!store.groupInfo) {
+  if (!store.currentViewingGroup) {
     router.push('/')
     return
   }
 
-  // === 1. ГЕНИАЛЬНАЯ ЗАЩИТА ОТ СПАМА (ФЕЙКОВАЯ РАБОТА) ===
+  // === 1. ГЕНИАЛЬНАЯ ЗАЩИТА ОТ СПАМА (Теперь честная) ===
   if (isManual) {
     const now = Date.now()
-    // Если с прошлого обновления прошло меньше 5 секунд (5000 мс)
     if (now - lastManualFetch < 5000) {
       isLoading.value = true
-      // Имитируем бурную деятельность на 400 миллисекунд
       await new Promise(res => setTimeout(res, 400)) 
-      store.addToast('Расписание актуально', 'success')
+      
+      // Проверяем: если системно нет сети, или прошлый запрос упал/выдал кэш
+      if (!navigator.onLine || isOffline.value || lastFetchStatus === 'offline' || lastFetchStatus === 'error') {
+        // Проверяем, есть ли что показывать на экране
+        const msg = allLessons.value.length > 0 ? 'Нет сети. Показана кэшированная версия' : 'Нет подключения к сети'
+        store.addToast(msg, 'error')
+      } else {
+        store.addToast('Расписание актуально', 'success')
+      }
+      
       isLoading.value = false
-      return // ПРЕРЫВАЕМ ФУНКЦИЮ! До твоего сервера запрос не долетит.
+      return
     }
     lastManualFetch = now
   }
 
   isLoading.value = true
   isOffline.value = false
-  const startTime = Date.now() // Засекаем время старта реального запроса
+  const startTime = Date.now()
   
   try {
     const config = await api.getConfig()
@@ -91,11 +100,13 @@ const fetchScheduleData = async (isManual = false) => {
       anchorIsEven.value = config.isEven
     }
 
-    const data = await api.getSchedule(store.groupInfo.group_id)
+    // ХИРУРГИЧЕСКИЙ ТОЧЕЧНЫЙ ПАТЧ: берем group_id из текущей просматриваемой группы
+    const data = await api.getSchedule(store.currentViewingGroup.group_id)
     allLessons.value = data.lessons || []
-    
-    // Сохраняем ссылку на эксель
     originalExcelUrl.value = data.view_url || null
+    
+    // Запоминаем реальный статус от API-клиента для следующего спам-клика
+    lastFetchStatus = data._meta?.status || 'actual'
     
     if (data.start_education_date) educationStart.value = new Date(data.start_education_date)
     if (data.end_education_date) educationEnd.value = new Date(data.end_education_date)
@@ -114,11 +125,8 @@ const fetchScheduleData = async (isManual = false) => {
       }
     }
 
-    // === 2. МИНИМАЛЬНОЕ ВРЕМЯ АНИМАЦИИ (Красота) ===
     if (isManual) {
       const elapsed = Date.now() - startTime
-      // Если запрос выполнился слишком быстро (например за 10мс из кэша),
-      // докручиваем таймер, чтобы анимация длилась ровно 500мс
       if (elapsed < 800) {
         await new Promise(res => setTimeout(res, 800 - elapsed))
       }
@@ -126,11 +134,11 @@ const fetchScheduleData = async (isManual = false) => {
 
     // === ЛОГИКА РАЗГОВОРЧИВОЙ КНОПКИ ===
     if (isManual) {
-      if (data._meta.status === 'actual') {
+      if (lastFetchStatus === 'actual') {
         store.addToast('Расписание актуально', 'success') 
-      } else if (data._meta.status === 'updated') {
+      } else if (lastFetchStatus === 'updated') {
         store.addToast('Расписание обновлено', 'success')
-      } else if (data._meta.status === 'offline') {
+      } else if (lastFetchStatus === 'offline') {
         store.addToast('Нет сети. Показана кэшированная версия', 'error')
       }
     }
@@ -138,11 +146,20 @@ const fetchScheduleData = async (isManual = false) => {
   } catch (error) {
     isOffline.value = true
     allLessons.value = []
+    lastFetchStatus = 'error' // Запоминаем, что мы жестко упали (даже кэша нет)
+    
+    // === 2. ФИКС ТИШИНЫ ПРИ ПЕРВОМ КЛИКЕ БЕЗ СЕТИ ===
+    if (isManual) {
+      store.addToast('Нет подключения к сети', 'error')
+    }
   } finally {
     isLoading.value = false
   }
 }
-
+// Отслеживаем смену просматриваемой группы из глобального поиска
+watch(() => store.currentViewingGroup, () => {
+  fetchScheduleData(false)
+}, { deep: true })
 
 let timerId: number
 
@@ -153,9 +170,63 @@ onMounted(() => {
     const now = new Date()
     currentMinutes.value = now.getHours() * 60 + now.getMinutes()
   }, 60000)
-})
-onUnmounted(() => clearInterval(timerId))
 
+// === ГИБРИДНЫЙ ВАРИАНТ УСТАНОВКИ PWA (СО СЧЕТЧИКОМ) ===
+  setTimeout(() => {
+    // 1. Если установлено - молчим
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone
+    if (isStandalone) return
+
+    // 2. Если юзер просил больше не показывать - молчим
+    if (localStorage.getItem('pwa_prompt_ignored') === 'true') return
+
+    // 3. Увеличиваем счетчик показов
+    let promptCount = parseInt(localStorage.getItem('pwa_prompt_count') || '0')
+    promptCount += 1
+    localStorage.setItem('pwa_prompt_count', promptCount.toString())
+
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+    const showCheckbox = promptCount >= 5 // Показываем чекбокс начиная с 5-го раза
+
+    // Функция сохранения решения юзера
+    const handleCheckUserIgnore = () => {
+      if (store.modal.checkboxValue) {
+        localStorage.setItem('pwa_prompt_ignored', 'true')
+      }
+    }
+
+    if (store.deferredPrompt) {
+      store.showModal({
+        title: 'Установить приложение',
+        message: 'Добавь Kosyga.Space на главный экран, чтобы расписание работало моментально и без интернета.',
+        confirmText: 'Установить',
+        type: 'primary',
+        showCheckbox: showCheckbox,
+        checkboxText: 'Больше не предлагать',
+        onConfirm: async () => {
+          handleCheckUserIgnore()
+          store.deferredPrompt.prompt()
+          await store.deferredPrompt.userChoice
+          store.deferredPrompt = null
+        },
+        onCancel: handleCheckUserIgnore
+      })
+    } else {
+      store.showModal({
+        title: isIOS ? 'Установить на iPhone' : 'Установить приложение',
+        message: isIOS 
+          ? 'Нажми кнопку «Поделиться» (квадрат со стрелочкой) внизу экрана Safari и выберите «На экран Домой».'
+          : 'Нажми на три точки в правом верхнем углу меню Chrome и выбери «Установить приложение» (или «Добавить на гл. экран»).',
+        confirmText: 'Понятно',
+        type: 'primary',
+        showCheckbox: showCheckbox,
+        checkboxText: 'Больше не предлагать',
+        onConfirm: handleCheckUserIgnore,
+        onCancel: handleCheckUserIgnore
+      })
+    }
+  }, 3500)
+})
 const isEvenWeek = computed(() => {
   const start = semesterStartDate.value.getTime()
   const current = selectedDate.value.getTime()
@@ -349,26 +420,51 @@ const formatPlace = (place: string) => {
   const match = place.match(/^(.*?)\s*(\(.*?\))$/)
   return match ? { main: match[1], sub: match[2] } : { main: place, sub: '' }
 }
+
+
+
+// Метод переключения избранного с авто-сменой контекста просмотра
+const toggleCurrentFavorite = () => {
+  if (store.currentViewingGroup) {
+    store.toggleFavorite(store.currentViewingGroup)
+    
+    // Если группа стала избранной — меняем контекст, мини-кнопка исчезает
+    if (store.isFavorite(store.currentViewingGroup.group_id)) {
+      store.viewContext = 'favorite'
+      store.addToast('Группа добавлена в избранное', 'success')
+    } else {
+      store.viewContext = 'guest'
+      store.addToast('Группа удалена из избранного', 'info')
+    }
+  }
+}
 </script>
 <template>
   <div class="flex flex-col h-full bg-slate-950 text-slate-50 overflow-hidden">
     
     <!-- Шапка -->
-    <div class="px-4 pt-6 pb-4 flex flex-col gap-3">
-<!-- Верхний ряд шапки: Группа и бейдж недели -->
+<!-- Шапка -->
+    <div class="px-4 pt-6 pb-2 flex flex-col gap-3">
+      <!-- Верхний ряд шапки: Группа, Стейт, Неделя, Обновить -->
       <div class="flex items-start justify-between">
         
-        <!-- Кнопка-селектор группы (Теперь не ломается от длинных имен) -->
+        <!-- Кнопка-селектор группы -->
         <button @click="isGroupSheetOpen = true" class="flex items-center gap-1.5 px-3 py-1.5 -ml-3 rounded-xl hover:bg-slate-900/80 transition-colors max-w-[55%]">
           <div class="w-5 h-5 rounded-md bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0 text-indigo-400">
             <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
           </div>
-          <!-- ДОБАВЛЕН truncate -->
           <span class="font-bold text-slate-200 tracking-wide text-sm truncate">{{ groupInfo.group_name }}</span>
           <svg class="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
         </button>
-        <!-- Правый блок: Бейдж недели + Кнопка обновления -->
+        
+        <!-- Правый блок: Стейт + Бейдж недели + Кнопка обновления -->
         <div class="flex items-center gap-2">
+          
+          <!-- МИНИ-ИКОНКА СТЕЙТА -->
+          <div class="flex items-center justify-center w-6 h-6 rounded-md bg-slate-900/50 border border-slate-800 text-xs shrink-0 shadow-sm">
+            {{ store.viewContext === 'main' ? '🏠' : (store.viewContext === 'favorite' ? '⭐' : '👁️') }}
+          </div>
+
           <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border bg-slate-900/50" :class="isEvenWeek ? 'border-indigo-500/20' : 'border-emerald-500/20'">
             <div class="w-1.5 h-1.5 rounded-full shadow-[0_0_8px_currentColor]" :class="isEvenWeek ? 'bg-indigo-400 text-indigo-400' : 'bg-emerald-400 text-emerald-400'"></div>
             <span class="text-xs font-semibold tracking-wide" :class="isEvenWeek ? 'text-indigo-400' : 'text-emerald-400'">
@@ -376,7 +472,6 @@ const formatPlace = (place: string) => {
             </span>
           </div>
 
-        <!-- Кнопка обновления (крутится пока isLoading = true) -->
           <button 
             @click="fetchScheduleData(true)" 
             :disabled="isLoading"
@@ -389,11 +484,44 @@ const formatPlace = (place: string) => {
           </button>
         </div>
       </div>
-      <h2 class="text-3xl font-bold tracking-tight bg-gradient-to-br from-white to-slate-400 bg-clip-text text-transparent capitalize">
-        {{ monthNames[selectedDate.getMonth()] }}
-      </h2>
-    </div>
 
+<!-- Второй ряд шапки: Месяц и Кнопки действий (В ОДИН РЯД НА ОДНОМ УРОВНЕ) -->
+      <div class="flex items-end justify-between relative z-10">
+        <!-- mb-1 позволяет тексту визуально лежать на одной линии с кнопками -->
+        <h2 class="text-3xl font-bold tracking-tight bg-gradient-to-br from-white to-slate-400 bg-clip-text text-transparent capitalize mb-1">
+          {{ monthNames[selectedDate.getMonth()] }}
+        </h2>
+        
+        <!-- Правый блок с кнопками (Горизонтальный ряд) -->
+        <TransitionGroup 
+          name="action-btns" 
+          tag="div" 
+          class="flex items-center justify-end gap-2 mb-1 relative"
+        >
+          <!-- МИНИАТЮРНАЯ КНОПКА ДОБАВИТЬ В ИЗБРАННОЕ (Слева от "Домой") -->
+          <button 
+            key="add"
+            v-if="store.viewContext === 'guest'"
+            @click="toggleCurrentFavorite" 
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 active:scale-95 transition-all shadow-sm whitespace-nowrap"
+          >
+            <span class="text-[10px] leading-none">⭐</span>
+            <span class="text-[10px] font-bold uppercase tracking-widest mt-0.5">Добавить</span>
+          </button>
+
+          <!-- МИНИАТЮРНАЯ КНОПКА ДОМОЙ (Справа) -->
+          <button 
+            key="home"
+            v-if="store.viewContext !== 'main'"
+            @click="store.resetToMainGroup()"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-400 active:scale-95 transition-all shadow-sm whitespace-nowrap"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            <span class="text-[10px] font-bold uppercase tracking-widest mt-0.5">Домой</span>
+          </button>
+        </TransitionGroup>
+      </div>
+    </div>
 <!-- Монолитная труба дней -->
     <div class="px-4 py-2 relative flex flex-col items-end">
       
@@ -438,7 +566,7 @@ const formatPlace = (place: string) => {
     </div>
     <div class="flex-1 relative overflow-hidden" @touchstart="onTouchStart" @touchend="onTouchEnd">
     <!-- Список пар -->
-      <Transition :name="transitionName" mode="out-in">
+      <Transition :name="transitionName" >
         <div :key="selectedDate.getTime()" class="absolute inset-0 px-4 py-4 overflow-y-auto space-y-4 pb-24 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] overscroll-y-contain [-webkit-overflow-scrolling:touch]">
           
           <!-- СТЕЙТ 1: ЗАГРУЗКА -->
@@ -616,8 +744,29 @@ const formatPlace = (place: string) => {
       </div>
 
     <!-- КНОПКА ОРИГИНАЛЬНОГО РАСПИСАНИЯ -->
-      <div v-if="originalExcelUrl" class="mt-4">
+<!-- КНОПКИ ДЕЙСТВИЙ В ШТОРКЕ -->
+      <div class="mt-4 flex flex-col gap-2">
+        
+        <!-- Кнопка Добавить/Удалить из избранного (Не показывается для основной группы) -->
         <button 
+          v-if="store.viewContext !== 'main'"
+          @click="toggleCurrentFavorite"
+          class="w-full py-3.5 flex items-center justify-center gap-2 rounded-xl transition-colors font-bold text-sm active:scale-[0.98] border"
+          :class="store.isFavorite(groupInfo.group_id) 
+            ? 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700' 
+            : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'"
+        >
+          <span v-if="store.isFavorite(groupInfo.group_id)">
+            <svg class="w-5 h-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </span>
+          <span v-else>⭐</span>
+          
+          {{ store.isFavorite(groupInfo.group_id) ? 'Удалить из избранного' : 'Добавить в избранное' }}
+        </button>
+
+        <!-- КНОПКА ОРИГИНАЛЬНОГО РАСПИСАНИЯ -->
+        <button 
+          v-if="originalExcelUrl" 
           @click="isExcelModalOpen = true"
           class="w-full py-3.5 flex items-center justify-center gap-2 rounded-xl transition-colors font-bold text-sm active:scale-[0.98] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20"
         >
@@ -627,7 +776,6 @@ const formatPlace = (place: string) => {
           Оригинал от ВУЗа (Excel)
         </button>
       </div>
-
     </BottomSheet>
 
 <!-- === ПОЛНОЭКРАННОЕ ОКНО EXCEL === -->
@@ -678,7 +826,7 @@ const formatPlace = (place: string) => {
 .slide-left-leave-active,
 .slide-right-enter-active,
 .slide-right-leave-active {
-  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* === АНИМАЦИЯ ВПЕРЕД (Свайп влево, следующий день) === */
@@ -703,5 +851,22 @@ const formatPlace = (place: string) => {
 .slide-right-leave-to {
   opacity: 0;
   transform: translateX(30px);
+}
+
+
+/* === АНИМАЦИЯ КНОПОК ШАПКИ (ГОРИЗОНТАЛЬНАЯ БЕЗ СКАЧКОВ ВЫСОТЫ) === */
+.action-btns-move,
+.action-btns-enter-active,
+.action-btns-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.action-btns-enter-from,
+.action-btns-leave-to {
+  opacity: 0;
+  transform: scale(0.9) translateX(10px);
+}
+/* position: absolute вырывает кнопку из верстки при удалении, чтобы высота/ширина родителя не дергалась */
+.action-btns-leave-active {
+  position: absolute;
 }
 </style>

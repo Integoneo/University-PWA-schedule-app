@@ -1,8 +1,23 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { store } from './store'
+import { onMounted } from 'vue'
 const route = useRoute()
 const router = useRouter()
+import Modal from './components/Modal.vue'
+
+onMounted(() => {
+  // При перезапуске сбрасываем контекст на основную группу
+  store.resetToMainGroup()
+
+  // ПЕРЕХВАТ PWA УСТАНОВКИ (Android / Chrome)
+  window.addEventListener('beforeinstallprompt', (e) => {
+    // Отменяем стандартный браузерный баннер
+    e.preventDefault()
+    // Сохраняем событие, чтобы вызвать его своей красивой модалкой позже
+    store.deferredPrompt = e
+  })
+})
 
 const tabs = [
   {
@@ -26,6 +41,20 @@ const tabs = [
     icon: '<svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>'
   }
 ]
+
+
+onMounted(() => {
+  // При перезапуске приложения сбрасываем контекст просмотра на 🏠 Основную группу
+  store.resetToMainGroup()
+})
+
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault()
+  store.deferredPrompt = e
+  // ВРЕМЕННЫЙ ТОСТ ДЛЯ ДИАГНОСТИКИ:
+  store.addToast('Событие PWA поймано! Браузер готов к установке', 'success')
+})
 </script>
 
 <template>
@@ -38,7 +67,6 @@ const tabs = [
         </keep-alive>
       </transition>
     </router-view>
-    <!-- Стеклянный Navbar с защитой Safe Area -->
     <nav 
       v-if="!route.meta.hideNavbar"
       class="absolute bottom-0 left-0 right-0 bg-slate-950/75 backdrop-blur-2xl border-t border-slate-800/60 rounded-t-3xl z-50 flex items-start justify-between px-6 pt-2"
@@ -51,7 +79,6 @@ const tabs = [
         class="relative flex flex-col items-center justify-start h-full pt-2 transition-colors duration-300 touch-manipulation flex-1"
         :class="route.path === tab.path ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-400'"
       >
-        <!-- Точку убрали, иконка теперь подпрыгивает чуть выше (-translate-y-1) -->
         <div v-html="tab.icon" class="mb-1 transition-transform duration-300" :class="route.path === tab.path ? '-translate-y-1 scale-110' : 'scale-100'"></div>
         <span class="text-[10px] font-semibold tracking-wide">{{ tab.name }}</span>
       </button>
@@ -80,31 +107,7 @@ const tabs = [
       </div>
 
       <!-- УНИВЕРСАЛЬНАЯ МОДАЛКА -->
-      <Transition name="modal">
-        <!-- Фон (блюр). @click закрывает модалку при клике вне окна -->
-        <div v-if="store.modal.isOpen" @click="store.closeModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[200] flex items-center justify-center p-5 pointer-events-auto">
-          
-          <!-- Само окно. @click.stop блокирует закрытие при клике по самому окну -->
-          <div @click.stop class="modal-box bg-slate-900 border border-slate-800 rounded-[2rem] p-6 w-full max-w-sm shadow-2xl flex flex-col gap-5">
-            
-            <div class="flex flex-col gap-2.5">
-              <h3 class="text-xl font-bold text-white leading-tight">{{ store.modal.title }}</h3>
-              <p class="text-sm text-slate-400 leading-relaxed">{{ store.modal.message }}</p>
-            </div>
-            
-            <div class="flex gap-3 mt-2">
-              <button @click="store.closeModal" class="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl transition-colors">
-                Отмена
-              </button>
-              <button @click="store.modal.onConfirm" class="flex-1 py-3.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold border border-red-500/20 rounded-xl transition-colors">
-                {{ store.modal.confirmText }}
-              </button>
-            </div>
-            
-          </div>
-        </div>
-      </Transition>
-
+       <Modal/> 
     </Teleport>
   </main>
 </template>
@@ -155,16 +158,4 @@ const tabs = [
 }
 
 /* Анимация Модального окна (Фон + Само окно) */
-.modal-enter-active, .modal-leave-active {
-  transition: opacity 0.25s ease;
-}
-.modal-enter-active .modal-box, .modal-leave-active .modal-box {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.modal-enter-from, .modal-leave-to {
-  opacity: 0;
-}
-.modal-enter-from .modal-box, .modal-leave-to .modal-box {
-  transform: scale(0.95) translateY(15px);
-}
 </style>

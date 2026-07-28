@@ -1,46 +1,70 @@
-// src/store.ts
 import { reactive } from 'vue'
 
 const savedGroup = localStorage.getItem('user_group')
 const savedFavorites = localStorage.getItem('user_favorites')
 
+const parsedGroup = savedGroup ? JSON.parse(savedGroup) : null
+
 export const store = reactive({
-  // Текущая выбранная группа
-  groupInfo: savedGroup ? JSON.parse(savedGroup) : null,
+  deferredPrompt: null as any,
+  // 🏠 Основная группа (всегда сохраняется в localStorage)
+  groupInfo: parsedGroup,
   
-  // Массив избранных групп
-  favorites: savedFavorites ? JSON.parse(savedFavorites) : [],
+  // 📋 Группа, которую мы смотрим ПРЯМО СЕЙЧАС (по умолчанию — основная)
+  currentViewingGroup: parsedGroup,
+
+  // 🔄 Контекст текущего просмотра: 'main' | 'favorite' | 'guest'
+  viewContext: 'main' as 'main' | 'favorite' | 'guest',
+  
+  // ⭐ Массив избранных групп
+  favorites: savedFavorites ? JSON.parse(savedFavorites) : [] as any[],
   
   // Установить основную группу
-    setGroup(groupData: any) {
+  setGroup(groupData: any) {
     this.groupInfo = groupData
     localStorage.setItem('user_group', JSON.stringify(groupData))
+    
+    // Принудительно выставляем ее как текущую просматриваемую
+    this.currentViewingGroup = groupData
+    this.viewContext = 'main'
     
     // Исключаем новую основную группу из избранного (если она там была)
     this.favorites = this.favorites.filter((g: any) => g.group_id !== groupData.group_id)
     localStorage.setItem('user_favorites', JSON.stringify(this.favorites))
   },
 
+  // Временное переключение контекста просмотра (вызывается из Поиска или Профиля)
+  setViewingGroup(groupData: any, context: 'favorite' | 'guest') {
+    this.currentViewingGroup = groupData
+    this.viewContext = context
+  },
+
+  // Функция быстрого возврата на 🏠 Основную группу
+  resetToMainGroup() {
+    this.currentViewingGroup = this.groupInfo
+    this.viewContext = 'main'
+  },
+
   // Сбросить основную группу (для выхода)
   clearGroup() {
     this.groupInfo = null
+    this.currentViewingGroup = null
+    this.viewContext = 'main'
     localStorage.removeItem('user_group')
   },
 
   // Добавить или удалить из избранного
   toggleFavorite(groupData: any) {
-    // Проверяем, есть ли уже такая группа в избранном
     const index = this.favorites.findIndex((g: any) => g.group_id === groupData.group_id)
-    
     if (index === -1) {
-      // Если нет — добавляем
       this.favorites.push(groupData)
     } else {
-      // Если есть — удаляем
       this.favorites.splice(index, 1)
+      // Если удалили группу, которую прямо сейчас смотрели в качестве Избранной — мягко переключаем контекст на гостя или основную
+      if (this.currentViewingGroup?.group_id === groupData.group_id && this.viewContext === 'favorite') {
+        this.viewContext = 'guest'
+      }
     }
-    
-    // Сохраняем обновленный массив в память телефона
     localStorage.setItem('user_favorites', JSON.stringify(this.favorites))
   },
 
@@ -49,53 +73,70 @@ export const store = reactive({
     return this.favorites.some((g: any) => g.group_id === groupId)
   },
 
-// === СИСТЕМА УВЕДОМЛЕНИЙ ===
+  // === СИСТЕМА УВЕДОМЛЕНИЙ ===
   toasts: [] as Array<{ id: number, message: string, type: 'success' | 'error' | 'info' }>,
   
   addToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
     const id = Date.now()
-    
-    // Защита от спама: если тостов уже 3, жестко выкидываем самый старый (первый в массиве)
     if (this.toasts.length >= 3) {
       this.toasts.shift()
     }
-    
     this.toasts.push({ id, message, type })
-    
-    // Автоудаление
     setTimeout(() => {
       this.removeToast(id)
     }, 3000)
   },
 
-  // Функция для удаления по клику
   removeToast(id: number) {
     this.toasts = this.toasts.filter(t => t.id !== id)
   },
-// === ГЛОБАЛЬНОЕ МОДАЛЬНОЕ ОКНО ===
+
+// === УНИВЕРСАЛЬНАЯ МОДАЛКА ===
   modal: {
     isOpen: false,
     title: '',
     message: '',
     confirmText: '',
-    onConfirm: () => {}
+    type: 'danger' as 'danger' | 'primary',
+    showCheckbox: false, // Показывать ли чекбокс
+    checkboxText: '',
+    checkboxValue: false, // Состояние галочки
+    onConfirm: () => {},
+    onCancel: () => {}
   },
   
-  showModal(config: { title: string, message: string, confirmText: string, onConfirm: () => void }) {
-    this.modal.title = config.title
-    this.modal.message = config.message
-    this.modal.confirmText = config.confirmText
-    // Оборачиваем функцию пользователя, чтобы модалка сама закрывалась после клика
+  showModal(options: { 
+    title: string, 
+    message: string, 
+    confirmText: string, 
+    type?: 'danger' | 'primary', 
+    showCheckbox?: boolean,
+    checkboxText?: string,
+    onConfirm: () => void,
+    onCancel?: () => void 
+  }) {
+    this.modal.title = options.title
+    this.modal.message = options.message
+    this.modal.confirmText = options.confirmText
+    this.modal.type = options.type || 'danger'
+    
+    // Настройки чекбокса
+    this.modal.showCheckbox = options.showCheckbox || false
+    this.modal.checkboxText = options.checkboxText || ''
+    this.modal.checkboxValue = false // Сбрасываем галочку при новом открытии
+    
     this.modal.onConfirm = () => {
-      config.onConfirm()
-      this.closeModal()
+      options.onConfirm()
+      this.closeModal(false) // false означает, что закрыли НЕ через "Отмену"
     }
+    this.modal.onCancel = options.onCancel || (() => {})
     this.modal.isOpen = true
   },
   
-  closeModal() {
+  closeModal(isCancel = true) {
+    if (this.modal.isOpen && isCancel) {
+      this.modal.onCancel()
+    }
     this.modal.isOpen = false
-  }
+  },
 })
-
-
