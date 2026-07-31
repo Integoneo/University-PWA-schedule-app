@@ -3,13 +3,14 @@ import json
 from xxhash import xxh64
 from pydantic import ValidationError
 import redis.asyncio as aioredis
-from devtools import debug
 
 from app.db.engine import get_async_session
 from app.utils import get_logger, send_tg_alert, redis_client
 
 from app.worker_modules.group_lessons.schemas import SchedulePayloadSchema
 from app.worker_modules.group_lessons.processor import process_schedule
+from app.db.config import settings
+from app.utils import ping_kuma_sync
 
 
 logger = get_logger(__name__)
@@ -39,6 +40,12 @@ async def main_worker_loop():
             True  # Переменная для того что бы вывести надпись об ожидании 1 раз
         )
         while True:
+            if settings.KUMA_URL:
+                # Запускаем пинг в отдельном легком потоке, чтобы не тормозить цикл
+                asyncio.create_task(
+                    asyncio.to_thread(ping_kuma_sync, settings.KUMA_URL)
+                )
+
             raw_dict = {}
             try:
                 response = await redis_client.xreadgroup(
@@ -77,9 +84,6 @@ async def main_worker_loop():
                         )
 
                         if should_notify:
-                            # TODO: Сделать инвалидацию кэша для группы которая обновилась
-
-                            # redis_client.hdel()
                             # BIG TODO: Настроить подписки на GOOGLE Firebase что бы отправлять уведолмения
                             # об изменении расписания студентам
                             # но это вообще на потом
@@ -111,7 +115,7 @@ async def main_worker_loop():
                     await send_tg_alert(
                         "Python worker", "ERROR", "Ошибка валидации расписания", inst
                     )
-                    debug(e)
+                    logger.error(str(e))
                 await redis_client.xack(STREAM_NAME, GROUP_NAME, msg_id)
                 await redis_client.xdel(STREAM_NAME, msg_id)
 

@@ -19,6 +19,20 @@ onMounted(() => {
   })
 })
 
+onMounted(() => {
+  // Слушаем событие "возвращения" в приложение
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      // Когда юзер вернулся, даем WebView 100 миллисекунд на раздумья 
+      // и принудительно имитируем изменение размера окна. 
+      // Это заставит Android заново посчитать высоту экрана и вернуть навбар на место.
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'))
+      }, 100)
+    }
+  })
+})
+
 const tabs = [
   {
     path: '/lessons',

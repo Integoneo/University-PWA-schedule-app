@@ -9,7 +9,7 @@ import asyncio
 import logging
 import json
 
-from shared import NewMessage, proxy
+from shared import NewMessage, config
 
 from shared import (
     CheckedURL,
@@ -24,6 +24,7 @@ from shared import (
     BATCH_SIZE,
     DOWNLOADER_QUEUE,
     DOMStructureChangedError,
+    URL_TO_PARSE,
 )
 
 logging.basicConfig(
@@ -32,7 +33,73 @@ logging.basicConfig(
 logger = logging.getLogger("Observer")
 
 
-PROXY_URL_PARSING = f"http://{proxy.PROXY_LOGIN_PARSING}:{proxy.PROXY_PASSWORD_PARSING}@{proxy.PROXY_HOST}:{proxy.PROXY_PORT}"
+PROXY_URL_PARSING = f"http://{config.PROXY_LOGIN_PARSING}:{config.PROXY_PASSWORD_PARSING}@{config.PROXY_HOST}:{config.PROXY_PORT}"
+
+
+async def ping_kuma(session: aiohttp.ClientSession) -> None:
+    if config.KUMA_URL:
+        try:
+            # Просто делаем легкий запрос и даже не читаем ответ
+            async with session.get(config.KUMA_URL):
+                pass
+        except Exception as e:
+            logger.error(f"Не удалось пингануть Kuma: {e}")
+
+
+async def fetch_html_with_retries(session: aiohttp.ClientSession) -> str:
+    """
+    Бесконечно пытается скачать HTML-страницу.
+    Выходит из функции и возвращает HTML только при успехе (HTTP 200).
+    """
+    retry_delay = 5  # Начальная задержка перед повторной попыткой
+
+    counter = 0
+    html_in_problems = False
+    while True:
+        await ping_kuma(session)
+        err_obj = None
+        try:
+            logger.info(f"Стучимся на {URL_TO_PARSE}...")
+
+            # Открываем контекст ТОЛЬКО на момент скачивания странички
+            async with session.get(URL_TO_PARSE, proxy=PROXY_URL_PARSING) as response:
+                response.raise_for_status()
+                html = await response.text()
+
+            # Если дошли сюда, значит скачали успешно. Сбрасываем задержку и возвращаем HTML.
+            logger.info("HTML успешно скачан!")
+            return html
+
+        except aiohttp.ClientResponseError as e:
+            err_obj = e
+            msg = f"HTTP {e.status} при попытке скачать главную страницу"
+            logger.error(f"{msg}. Повтор через {retry_delay} сек. Детали: {e.message}")
+
+        except aiohttp.ClientError as e:
+            err_obj = e
+            msg = f"Сетевая ошибка {e.__class__.__name__} при скачивании"
+            logger.error(f"{msg}. Повтор через {retry_delay} сек. Детали: {e}")
+
+        except Exception as e:
+            err_obj = e
+            msg = f"Непредвиденная ошибка {e.__class__.__name__} при скачивании"
+            logger.error(f"{msg}. Повтор через {retry_delay} сек. Детали: {e}")
+        finally:
+            counter += 1
+
+            if counter > 10 and not html_in_problems:
+                await send_tg_alert(
+                    "CRITICAL",
+                    "Многократно повторяющиеся сетевые ошибки при скачивании HTML",
+                    f"{err_obj.__class__.__name__}",
+                )
+                html_in_problems = True
+
+        # Если поймали любую ошибку выше, просто ждем и пробуем снова (алерт в ТГ можно не слать, чтобы не спамило)
+        await asyncio.sleep(retry_delay)
+
+        # Увеличиваем задержку для следующего раза (максимум до 30 секунд)
+        retry_delay = min(retry_delay * 2, 30)
 
 
 def parse_and_count_schedule(

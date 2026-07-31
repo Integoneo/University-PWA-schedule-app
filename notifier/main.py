@@ -14,7 +14,7 @@ from shared import (
     OldMessage,
     OldMessageHash,
 )
-from utils import send_message, edit_message
+from utils import ping_kuma, send_message, edit_message
 
 
 async def main():
@@ -30,6 +30,7 @@ async def main():
 
         while True:
             is_pending_task = False
+            await ping_kuma(session)
 
             # 1. Сначала ищем НОВЫЕ сообщения (приоритет)
             response = await redis_pool.xreadgroup(

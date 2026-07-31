@@ -1,0 +1,38 @@
+
+# Игнорируем виртуальные окружения Python на всех уровнях
+**/venv/
+**/.venv/
+**/env/
+
+# Игнорируем кэш Python-компилятора
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Игнорируем кэш IDE (PyCharm, VS Code, CLion)
+**/.idea/
+**/.vscode/
+
+# Игнорируем локальные файлы данных и логи
+**/data/
+**/*.log
+
+# Игнорируем скрытые файлы Git
+**/.git/
+**/.gitignore
+
+**/build/
+**/cmake-build-debug/
+**/cmake-build-release/
+**/.cache/
+**/exec/
+**/build/
+**/Makefile
+**/*.o
+**/*.a
+
+
+# Игнорируем файлы с секретами
+**/.env
+*.env

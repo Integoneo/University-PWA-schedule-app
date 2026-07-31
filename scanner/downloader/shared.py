@@ -6,15 +6,12 @@ from typing import Literal, List
 from pydantic import BaseModel, ConfigDict, field_validator, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-REDIS_URL = "redis://localhost:6379/0"
-redis_pool = aioredis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 DOWNLOADER_QUEUE = "downloader:dowload_queue"
 
 CPP_QUEUE = "parser:ready_schedules"  # Очередь для плюсового парсера
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DOWNLOAD_DIR = "/dev/shm"  # Временная папка. В докере поменяю на /dev/shm
+# PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 DOWNLOADER_DLQ = "downloader:DLQ"
@@ -30,33 +27,41 @@ logging.basicConfig(
 logger = logging.getLogger("Downloader")
 
 
-class ProxySettings(BaseSettings):
-    PROXY_HOST: str
-    PROXY_PORT: str
-    PROXY_LOGIN_PARSING: str
-    PROXY_PASSWORD_PARSING: str
+class AppSettings(BaseSettings):
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+    # Пути
+    DOWNLOAD_DIR: str = "/dev/shm"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # Прокси парсинг
+    PROXY_HOST: str = ""
+    PROXY_PORT: str = ""
+    PROXY_LOGIN_PARSING: str = ""
+    PROXY_PASSWORD_PARSING: str = ""
+    KUMA_URL: str = ""
+
+    # Игнорируем лишние переменные из .env, которые не нужны этому скрипту
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 try:
-    proxy = ProxySettings()  # pyright: ignore[reportCallIssue]
-
+    config = AppSettings()
 except ValidationError as e:
-    print("\n" + "=" * 50)
-    print("🚨 ОШИБКА ЗАПУСКА: Отсутствуют или неверны настройки окружения!")
-    print("Пожалуйста, убедись, что файл .env существует и заполнен корректно.")
-    print("Или проверь секреты в твоем CI/CD пайплайне.")
-    print("=" * 50)
-
-    for error in e.errors():
-        field_name = error["loc"][0]
-        error_msg = error["msg"]
-        print(f"❌ Проблема с полем '{field_name}': {error_msg}")
-    print("=" * 50 + "\n")
-
+    print("🚨 ОШИБКА ЗАПУСКА: Отсутствуют настройки окружения!")
+    print(e)
     sys.exit(1)
 
+
+PROXY_URL_PARSING = f"http://{config.PROXY_LOGIN_PARSING}:{config.PROXY_PASSWORD_PARSING}@{config.PROXY_HOST}:{config.PROXY_PORT}"
+
+
+# Создаем папки физически, чтобы скрипт не падал при первом запуске
+Path(config.DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
+
+
+redis_pool = aioredis.Redis.from_url(config.REDIS_URL, decode_responses=True)
 
 # INFO: Схема для сообщения в тг
 

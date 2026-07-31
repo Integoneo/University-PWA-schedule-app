@@ -10,7 +10,7 @@ import Exams from '../components/Exams.vue'
 
 const routes = [
   { path: '/', redirect: '/lessons' },
-{ path: '/welcome', name: 'Welcome', component: Welcome, meta: { hideNavbar: true } },
+  { path: '/welcome', name: 'Welcome', component: Welcome, meta: { hideNavbar: true } },
   { path: '/onboarding', name: 'Onboarding', component: Onboarding, meta: { hideNavbar: true } },
   { path: '/lessons', name: 'Schedule', component: Schedule },
   { path: '/exams', name: 'Exams', component: Exams },
@@ -24,7 +24,7 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, _from, next) => {
   const hasGroup = !!store.groupInfo
 
   // Если группа ЕСТЬ, запрещаем идти на стартовые экраны (кидаем в расписание)

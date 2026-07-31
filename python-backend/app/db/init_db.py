@@ -1,7 +1,6 @@
 from sqlmodel import SQLModel, Session, create_engine
 from app.db.config import settings
 
-# Импортируем ВСЕ модели, чтобы Алхимия знала о них при создании таблиц
 from app.models.schedule import (
     AppConfig,
     # Institute,
@@ -12,12 +11,13 @@ from app.models.schedule import (
 )
 
 
-# Для создания таблиц мы используем СИНХРОННЫЙ URL (без asyncpg)
 SYNC_DATABASE_URL = (
-    f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}"
-    f"@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+    f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
+    f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
 )
-sync_engine = create_engine(SYNC_DATABASE_URL, echo=True)
+sync_engine = create_engine(
+    SYNC_DATABASE_URL, echo=False if settings.IS_PRODUCTION else True
+)
 
 
 def create_db_and_tables():

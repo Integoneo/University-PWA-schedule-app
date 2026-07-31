@@ -5,6 +5,7 @@
 #include <Utils.hpp>
 #include <chrono>
 #include <config.hpp>
+#include <cstdlib>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -21,6 +22,17 @@ class SafeRedis {
 	void wait_for_redis() {
 		_is_alive = false;
 		while (!_is_alive) {
+
+			// INFO: UPTIME KUMA PING
+			if (!config::KUMA_URL.empty()) {
+				// Формируем команду curl в сайлент-режиме (-s)
+				// и глушим весь вывод (> /dev/null)
+				std::string cmd = "curl -s \"" + config::KUMA_URL + "\" > /dev/null";
+
+				// Запускаем системную команду
+				std::system(cmd.c_str());
+			}
+
 			try {
 				_redis.ping();
 				_is_alive = true;

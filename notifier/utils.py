@@ -3,14 +3,29 @@ import functools
 from time import perf_counter
 import aiohttp
 from collections import Counter
-from shared import proxy, NewMessage, OldMessageHash, OldMessage, logger
+from shared import config, NewMessage, OldMessageHash, OldMessage, logger
 import html
 
 
-PROXY_URL_TG = f"http://{proxy.PROXY_LOGIN_TG}:{proxy.PROXY_PASSWORD_TG}@{proxy.PROXY_HOST}:{proxy.PROXY_PORT}"
-TG_API_URL = f"https://api.telegram.org/bot{proxy.TG_BOT_TOKEN}"
+PROXY_URL_TG = f"http://{config.PROXY_LOGIN_TG}:{config.PROXY_PASSWORD_TG}@{config.PROXY_HOST_TG}:{config.PROXY_PORT_TG}"
+TG_API_URL = f"https://api.telegram.org/bot{config.TG_BOT_TOKEN}"
 
 last_time_sended = 0.0
+
+
+async def ping_kuma(session: aiohttp.ClientSession | None) -> None:
+    if session is None and config.KUMA_URL:
+        conn = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(connector=conn) as session:
+            async with session.get(config.KUMA_URL):
+                pass
+    elif config.KUMA_URL and session:
+        try:
+            # Просто делаем легкий запрос и даже не читаем ответ
+            async with session.get(config.KUMA_URL):
+                pass
+        except Exception as e:
+            logger.error(f"Не удалось пингануть Kuma: {e}")
 
 
 # --- КАСТОМНЫЕ ИСКЛЮЧЕНИЯ ---
@@ -107,10 +122,11 @@ def build_beautiful_message(message: NewMessage | OldMessage) -> str:
 
 @with_tg_retries
 async def send_message(session: aiohttp.ClientSession, message: NewMessage) -> int:
+    await ping_kuma(session)
     await _throttle()
     url = f"{TG_API_URL}/sendMessage"
     payload = {
-        "chat_id": proxy.TG_CHAT_ID,
+        "chat_id": config.TG_CHAT_ID,
         "text": build_beautiful_message(message),
         "parse_mode": "HTML",
     }
@@ -134,10 +150,11 @@ async def send_message(session: aiohttp.ClientSession, message: NewMessage) -> i
 
 @with_tg_retries
 async def edit_message(session: aiohttp.ClientSession, message: OldMessageHash) -> int:
+    await ping_kuma(session)
     await _throttle()
     url = f"{TG_API_URL}/editMessageText"
     payload = {
-        "chat_id": proxy.TG_CHAT_ID,
+        "chat_id": config.TG_CHAT_ID,
         "message_id": message.tg_id_msg,
         "text": build_beautiful_message(message.payload),
         "parse_mode": "HTML",

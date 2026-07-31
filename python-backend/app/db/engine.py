@@ -5,13 +5,12 @@ from app.db.config import settings
 
 
 DATABASE_URL = (
-    f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}"
-    f"@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+    f"postgresql+asyncpg://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
+    f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
 )
 
 engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,  # TODO: вынести это потом в .env в обьект настроки
+    DATABASE_URL, echo=False if settings.IS_PRODUCTION else True
 )
 
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)

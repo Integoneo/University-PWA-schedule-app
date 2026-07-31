@@ -112,26 +112,6 @@ const onSelectGroup = (group: any, isFavClick = false) => {
     router.push('/lessons')
   }
 }
-
-// Переключение состояния избранного (звёздочка) прямо из поиска
-const handleToggleFavorite = (group: any) => {
-  const inst = group.institute
-  const groupData = {
-    group_id: group.id,
-    group_name: group.name,
-    institute_full_name: inst.name,
-    institute_short_name: inst.short_name,
-    study_form: normalizeStudyForm(group.education_form),
-    file_title: `${group.course} курс`,
-    logo_url: inst.logo_url
-  }
-  
-  store.toggleFavorite(groupData)
-  store.addToast(
-    store.isFavorite(groupData.group_id) ? 'Добавлено в избранное' : 'Удалено из избранного', 
-    'info'
-  )
-}
 </script>
 
 <template>

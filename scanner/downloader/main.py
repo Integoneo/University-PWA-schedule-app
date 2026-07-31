@@ -9,16 +9,13 @@ from shared import (
     logger,
     DOWNLOADER_QUEUE,
     CPP_QUEUE,
-    DOWNLOAD_DIR,
+    config,
     MAX_SHM_SIZE,
     GROUP_NAME,
     CONSUMER_NAME,
 )
 
-from utils import download_file, get_dir_size, HEADERS, send_tg_alert
-
-
-# --- КОНФИГИ DOWNLOADER'А ---
+from utils import download_file, get_dir_size, HEADERS, ping_kuma, send_tg_alert
 
 
 async def main():
@@ -38,6 +35,7 @@ async def main():
         logger.info("Ожидание задач в очереди...")
 
         while True:
+            await ping_kuma(session)
             try:
                 streams = await redis_pool.xreadgroup(
                     GROUP_NAME,
@@ -73,7 +71,7 @@ async def main():
 
                 # ---Контроль за переполнением---
                 while True:
-                    current_size = get_dir_size(DOWNLOAD_DIR)
+                    current_size = get_dir_size(config.DOWNLOAD_DIR)
                     if current_size + expected_size > MAX_SHM_SIZE:
                         logger.warning(
                             f"Папка переполнена ({current_size / 1024 / 1024:.1f} МБ). C++ парсер отстает. Ждем 5 сек..."
@@ -89,7 +87,7 @@ async def main():
 
                 # Генерируем безопасное имя
                 safe_filename = f"{uuid.uuid4().hex}.xlsx"
-                filepath = os.path.join(DOWNLOAD_DIR, safe_filename)
+                filepath = os.path.join(config.DOWNLOAD_DIR, safe_filename)
 
                 # Скачиваем (Декоратор сам сделает 3 попытки, проверит на ZIP и запишет в DLQ при провале)
                 success = await download_file(

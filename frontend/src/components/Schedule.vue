@@ -50,8 +50,6 @@ const formattedSemesterDates = computed(() => {
   return `${start} — ${end} ${year}`
 })
 
-
-
 // === РЕАЛЬНАЯ СЕТЬ (API) ===
 const isLoading = ref(true)
 const allLessons = ref<any[]>([]) 
@@ -156,13 +154,13 @@ const fetchScheduleData = async (isManual = false) => {
     isLoading.value = false
   }
 }
+
 // Отслеживаем смену просматриваемой группы из глобального поиска
 watch(() => store.currentViewingGroup, () => {
   fetchScheduleData(false)
 }, { deep: true })
 
-let timerId: number
-
+let timerId: ReturnType<typeof setInterval>
 
 onMounted(() => {
   fetchScheduleData()
@@ -171,24 +169,20 @@ onMounted(() => {
     currentMinutes.value = now.getHours() * 60 + now.getMinutes()
   }, 60000)
 
-// === ГИБРИДНЫЙ ВАРИАНТ УСТАНОВКИ PWA (СО СЧЕТЧИКОМ) ===
+  // === ГИБРИДНЫЙ ВАРИАНТ УСТАНОВКИ PWA (СО СЧЕТЧИКОМ) ===
   setTimeout(() => {
-    // 1. Если установлено - молчим
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone
     if (isStandalone) return
 
-    // 2. Если юзер просил больше не показывать - молчим
     if (localStorage.getItem('pwa_prompt_ignored') === 'true') return
 
-    // 3. Увеличиваем счетчик показов
     let promptCount = parseInt(localStorage.getItem('pwa_prompt_count') || '0')
     promptCount += 1
     localStorage.setItem('pwa_prompt_count', promptCount.toString())
 
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
-    const showCheckbox = promptCount >= 5 // Показываем чекбокс начиная с 5-го раза
+    const showCheckbox = promptCount >= 5 
 
-    // Функция сохранения решения юзера
     const handleCheckUserIgnore = () => {
       if (store.modal.checkboxValue) {
         localStorage.setItem('pwa_prompt_ignored', 'true')
@@ -227,6 +221,11 @@ onMounted(() => {
     }
   }, 3500)
 })
+
+onUnmounted(() => {
+  clearInterval(timerId)
+})
+
 const isEvenWeek = computed(() => {
   const start = semesterStartDate.value.getTime()
   const current = selectedDate.value.getTime()
@@ -254,12 +253,11 @@ const shortDays = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
 
 // === ЛИМИТЫ И СОСТОЯНИЯ СЕМЕСТРА ===
 const semesterState = computed(() => {
-  if (!educationStart.value || !educationEnd.value) return 'active' // Если дат еще нет - считаем активным
+  if (!educationStart.value || !educationEnd.value) return 'active' 
 
   const current = selectedDate.value.getTime()
   const start = educationStart.value.getTime()
   
-  // Конец семестра считаем до последней миллисекунды этого дня
   const end = new Date(educationEnd.value)
   end.setHours(23, 59, 59, 999)
   const endTime = end.getTime()
@@ -271,7 +269,6 @@ const semesterState = computed(() => {
 
 // === 2. ФИЛЬТРАЦИЯ И СТЕЙТЫ ПАР ===
 const currentLessons = computed(() => {
-  // Если семестр еще не начался или уже закончился — пар НЕТ, не пытаемся их даже искать
   if (semesterState.value !== 'active') return []
 
   let jsDay = selectedDate.value.getDay()
@@ -302,10 +299,7 @@ const getLessonState = (lesson: any) => {
   return 'future'
 }
 
-
-
 // === ЕДИНЫЙ КОНТРОЛЛЕР СОСТОЯНИЙ (STATE MACHINE) ===
-// Эта штука гарантирует, что Vue не запутается в v-if'ах при перерисовках
 const currentState = computed(() => {
   if (isLoading.value) return 'loading'
   if (isOffline.value) return 'offline'
@@ -315,15 +309,12 @@ const currentState = computed(() => {
   return 'lessons'
 })
 
-
-
 // === 3. ЛОГИКА СВАЙПОВ (Освобожденная) ===
 const transitionName = ref('slide-left')
 const touchStartX = ref(0)
 const touchStartY = ref(0)
 
 const selectDate = (date: Date) => {
-  // Никаких тостов и блокировок, просто листаем!
   if (date.getTime() > selectedDate.value.getTime()) transitionName.value = 'slide-left'
   else if (date.getTime() < selectedDate.value.getTime()) transitionName.value = 'slide-right'
   selectedDate.value = date
@@ -335,7 +326,6 @@ const changeDay = (delta: number) => {
   transitionName.value = delta > 0 ? 'slide-left' : 'slide-right'
   selectedDate.value = newDate
 }
-
 
 const onTouchStart = (e: TouchEvent) => {
   touchStartX.value = e.changedTouches[0].screenX
@@ -369,7 +359,6 @@ const copyDaySchedule = async () => {
     text += `\n`
   })
 
-  // 1. Пытаемся использовать современный API (Сработает на HTTPS/localhost)
   if (navigator.clipboard && window.isSecureContext) {
     try {
       await navigator.clipboard.writeText(text.trim())
@@ -380,11 +369,9 @@ const copyDaySchedule = async () => {
     }
   }
 
-  // 2. Фолбэк для HTTP (твой случай с 192.168.x.x)
   try {
     const textArea = document.createElement("textarea")
     textArea.value = text.trim()
-    // Прячем элемент за экраном
     textArea.style.position = "fixed"
     textArea.style.left = "-999999px"
     textArea.style.top = "-999999px"
@@ -421,14 +408,11 @@ const formatPlace = (place: string) => {
   return match ? { main: match[1], sub: match[2] } : { main: place, sub: '' }
 }
 
-
-
 // Метод переключения избранного с авто-сменой контекста просмотра
 const toggleCurrentFavorite = () => {
   if (store.currentViewingGroup) {
     store.toggleFavorite(store.currentViewingGroup)
     
-    // Если группа стала избранной — меняем контекст, мини-кнопка исчезает
     if (store.isFavorite(store.currentViewingGroup.group_id)) {
       store.viewContext = 'favorite'
       store.addToast('Группа добавлена в избранное', 'success')
@@ -443,12 +427,9 @@ const toggleCurrentFavorite = () => {
   <div class="flex flex-col h-full bg-slate-950 text-slate-50 overflow-hidden">
     
     <!-- Шапка -->
-<!-- Шапка -->
     <div class="px-4 pt-6 pb-2 flex flex-col gap-3">
-      <!-- Верхний ряд шапки: Группа, Стейт, Неделя, Обновить -->
       <div class="flex items-start justify-between">
         
-        <!-- Кнопка-селектор группы -->
         <button @click="isGroupSheetOpen = true" class="flex items-center gap-1.5 px-3 py-1.5 -ml-3 rounded-xl hover:bg-slate-900/80 transition-colors max-w-[55%]">
           <div class="w-5 h-5 rounded-md bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0 text-indigo-400">
             <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
@@ -457,10 +438,7 @@ const toggleCurrentFavorite = () => {
           <svg class="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
         </button>
         
-        <!-- Правый блок: Стейт + Бейдж недели + Кнопка обновления -->
         <div class="flex items-center gap-2">
-          
-          <!-- МИНИ-ИКОНКА СТЕЙТА -->
           <div class="flex items-center justify-center w-6 h-6 rounded-md bg-slate-900/50 border border-slate-800 text-xs shrink-0 shadow-sm">
             {{ store.viewContext === 'main' ? '🏠' : (store.viewContext === 'favorite' ? '⭐' : '👁️') }}
           </div>
@@ -485,20 +463,16 @@ const toggleCurrentFavorite = () => {
         </div>
       </div>
 
-<!-- Второй ряд шапки: Месяц и Кнопки действий (В ОДИН РЯД НА ОДНОМ УРОВНЕ) -->
       <div class="flex items-end justify-between relative z-10">
-        <!-- mb-1 позволяет тексту визуально лежать на одной линии с кнопками -->
         <h2 class="text-3xl font-bold tracking-tight bg-gradient-to-br from-white to-slate-400 bg-clip-text text-transparent capitalize mb-1">
           {{ monthNames[selectedDate.getMonth()] }}
         </h2>
         
-        <!-- Правый блок с кнопками (Горизонтальный ряд) -->
         <TransitionGroup 
           name="action-btns" 
           tag="div" 
           class="flex items-center justify-end gap-2 mb-1 relative"
         >
-          <!-- МИНИАТЮРНАЯ КНОПКА ДОБАВИТЬ В ИЗБРАННОЕ (Слева от "Домой") -->
           <button 
             key="add"
             v-if="store.viewContext === 'guest'"
@@ -509,7 +483,6 @@ const toggleCurrentFavorite = () => {
             <span class="text-[10px] font-bold uppercase tracking-widest mt-0.5">Добавить</span>
           </button>
 
-          <!-- МИНИАТЮРНАЯ КНОПКА ДОМОЙ (Справа) -->
           <button 
             key="home"
             v-if="store.viewContext !== 'main'"
@@ -522,10 +495,9 @@ const toggleCurrentFavorite = () => {
         </TransitionGroup>
       </div>
     </div>
-<!-- Монолитная труба дней -->
+    
     <div class="px-4 py-2 relative flex flex-col items-end">
       
-      <!-- ГЛАВНАЯ ТРУБА (z-10, чтобы быть ПОВЕРХ закладки) -->
       <div class="relative flex w-full bg-slate-900/60 rounded-2xl p-1 backdrop-blur-sm border border-slate-800 z-10">
         <div 
           class="absolute top-1 bottom-1 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-500/30 transition-transform duration-300 cubic-bezier(0.4, 0, 0.2, 1)"
@@ -541,15 +513,14 @@ const toggleCurrentFavorite = () => {
           <span class="relative z-10 text-base font-bold leading-none">{{ date.getDate() }}</span>
         </button>
       </div>
-  <!-- Внутренний контент (он отобразится, но не будет раздвигать верстку) -->
-      <!-- ЗАКЛАДКА (z-0, прячется ПОД трубой, вылезает за счет -mt-2 и pt-3) -->
+      
       <Transition name="fade">
         <div v-if="currentState === 'lessons'" class="w-full h-0 relative">
           <button
             @click="copyDaySchedule"
             class="
               absolute top-0 right-4 z-1 flex items-center gap-1 px-3 
-              -mt-2 pt-3 pb-1.5 /* -mt-2 затягивает кнопку под трубу, pt-3 компенсирует это для текста */
+              -mt-2 pt-3 pb-1.5 
               rounded-b-xl backdrop-blur-md transition-all active:scale-95
               bg-slate-900/40 border border-slate-800/90 border-t-0 shadow-sm
               text-slate-500 hover:text-slate-300 hover:bg-slate-800/60
@@ -560,16 +531,12 @@ const toggleCurrentFavorite = () => {
         </div>
       </Transition>
 
-
-
-
     </div>
+    
     <div class="flex-1 relative overflow-hidden" @touchstart="onTouchStart" @touchend="onTouchEnd">
-    <!-- Список пар -->
       <Transition :name="transitionName" >
         <div :key="selectedDate.getTime()" class="absolute inset-0 px-4 py-4 overflow-y-auto space-y-4 pb-24 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] overscroll-y-contain [-webkit-overflow-scrolling:touch]">
           
-          <!-- СТЕЙТ 1: ЗАГРУЗКА -->
           <div v-if="currentState === 'loading'" class="flex flex-col gap-4">
             <div v-for="i in 4" :key="'skeleton-'+i" class="relative flex rounded-3xl p-4 bg-slate-900/40 border border-slate-800/40 shadow-sm animate-pulse">
               <div class="w-[4.5rem] flex flex-col items-center pr-3 border-r border-slate-800/30 shrink-0 gap-2.5 pt-1 pb-1">
@@ -587,7 +554,6 @@ const toggleCurrentFavorite = () => {
             </div>
           </div>
 
-          <!-- СТЕЙТ 1.5: ОФФЛАЙН (Если нет кэша) -->
           <div v-else-if="currentState === 'offline'" class="mt-12 flex flex-col items-center justify-center text-center space-y-4 px-4">
             <div class="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
               <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18M9 9l3 3m0 0l3-3m-3 3v4" /></svg>
@@ -596,30 +562,26 @@ const toggleCurrentFavorite = () => {
               <h3 class="text-white font-bold text-lg">Нет подключения</h3>
               <p class="text-slate-400 text-sm">Расписание еще не загружено, а интернета нет.</p>
             </div>
-            <button @click="fetchScheduleData" class="mt-2 px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl border border-slate-700 transition-colors active:scale-95">
+            <button @click="fetchScheduleData(true)" class="mt-2 px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl border border-slate-700 transition-colors active:scale-95">
               Обновить
             </button>
           </div>
 
-          <!-- СТЕЙТ 2: ДО СЕМЕСТРА -->
           <div v-else-if="currentState === 'before'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
             <div class="w-20 h-20 rounded-full bg-slate-900/50 border border-slate-800 flex items-center justify-center text-3xl">🏖️</div>
             <p class="text-slate-400 text-sm font-medium">Семестр еще не начался.<br>Можно со спокойной душой кайфовать!</p>
           </div>
 
-          <!-- СТЕЙТ 3: ПОСЛЕ СЕМЕСТРА -->
           <div v-else-if="currentState === 'after'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
             <div class="w-20 h-20 rounded-full bg-slate-900/50 border border-slate-800 flex items-center justify-center text-3xl">🎓</div>
-            <p class="text-slate-400 text-sm font-medium">Учеба всё! Желаем удачи на сессии<br>(или классного отдыха).</p>
+            <p class="text-slate-400 text-sm font-medium">Учеба всё! Желаю удачи на сессии<br>(или классного отдыха).</p>
           </div>
 
-          <!-- СТЕЙТ 4: ПУСТОЙ ДЕНЬ -->
           <div v-else-if="currentState === 'empty'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
             <div class="w-20 h-20 rounded-full bg-slate-900/50 border border-slate-800 flex items-center justify-center text-3xl">😴</div>
             <p class="text-slate-400 text-sm font-medium">В этот день пар нет.<br>Можно отдохнуть!</p>
           </div>
 
-          <!-- СТЕЙТ 5: ЕСТЬ ПАРЫ -->
           <div v-else-if="currentState === 'lessons'" class="flex flex-col gap-4">
             <div 
               v-for="lesson in currentLessons" :key="lesson.id" 
@@ -631,7 +593,6 @@ const toggleCurrentFavorite = () => {
                 'bg-slate-900/95 border border-indigo-500/40 shadow-[0_0_25px_rgba(99,102,241,0.15)]': getLessonState(lesson) === 'now'
               }"
             >
-              <!-- Левая колонка времени -->
               <div class="w-[4.5rem] flex flex-col items-center pr-3 border-r shrink-0" :class="getLessonState(lesson) === 'now' ? 'border-indigo-500/30' : (getLessonState(lesson) === 'soon' ? 'border-amber-500/30' : 'border-slate-800/50')">
                 <span class="text-base font-bold" :class="getLessonState(lesson) === 'now' ? 'text-indigo-400' : (getLessonState(lesson) === 'soon' ? 'text-amber-400' : 'text-white')">
                   {{ lesson.start_time.slice(0, 5) }}
@@ -642,18 +603,17 @@ const toggleCurrentFavorite = () => {
                 </span>
               </div>
 
-              <!-- Правая колонка деталей -->
               <div class="flex-1 pl-4 flex flex-col justify-center min-w-0">
                 <div class="flex items-center justify-between mb-2">
                   <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md border" :class="getBadgeColor(lesson.type_of_lesson)">
                     {{ lesson.type_of_lesson }}
                   </span>
-                  <!-- Индикатор "Скоро" -->
+                  
                   <div v-if="getLessonState(lesson) === 'soon'" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
                     <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
                     <span class="text-[9px] font-bold uppercase tracking-wider text-amber-500">Скоро</span>
                   </div>
-                  <!-- Индикатор "Идет сейчас" -->
+                  
                   <div v-if="getLessonState(lesson) === 'now'" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
                     <div class="relative flex h-1.5 w-1.5">
                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
@@ -690,13 +650,10 @@ const toggleCurrentFavorite = () => {
       <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pointer-events-none z-30"></div>
     </div>
 
-<!-- === УНИВЕРСАЛЬНАЯ ШТОРКА ГРУППЫ === -->
+    <!-- === УНИВЕРСАЛЬНАЯ ШТОРКА ГРУППЫ === -->
     <BottomSheet :is-open="isGroupSheetOpen" @close="isGroupSheetOpen = false">
-      
-    <!-- ЗОНА СВАЙПА: Заголовок шторки -->
       <template #header>
         <div class="flex items-center justify-between pointer-events-none mb-2">
-          <!-- ДОБАВЛЕН break-words, уменьшен шрифт для конских названий -->
           <h2 class="text-xl pr-4 font-bold text-white tracking-tight break-words">Группа {{ groupInfo?.group_name || 'Д-101' }}</h2>
           <button @click.stop="isGroupSheetOpen = false" class="p-2 -mr-2 rounded-full text-slate-400 pointer-events-auto active:scale-95 transition-transform shrink-0">
             <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -705,16 +662,9 @@ const toggleCurrentFavorite = () => {
           </button>
         </div>
       </template>
-
-      <!-- КОНТЕНТ ШТОРКИ (Оставляешь свою карточку Института как есть) -->
-
-      <!-- КОНТЕНТ ШТОРКИ -->
       
-        <!-- Главная информационная карточка -->
       <div class="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-4 flex flex-col gap-4">
-        <!-- Институт -->
         <div class="flex items-center gap-3.5">
-          <!-- Иконка как в Onboarding (Белая) -->
           <div class="w-11 h-11 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0 p-1.5">
             <img v-if="groupInfo.logo_url" :src="groupInfo.logo_url" class="w-full h-full object-contain" alt="Логотип" />
             <svg v-else class="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" /></svg>
@@ -727,7 +677,6 @@ const toggleCurrentFavorite = () => {
 
         <div class="h-px w-full bg-gradient-to-r from-transparent via-slate-700/50 to-transparent"></div>
 
-        <!-- Сетка: Поток, Форма и Даты -->
         <div class="grid grid-cols-2 gap-y-4 gap-x-4 items-center">
           <div class="flex flex-col justify-center">
             <span class="text-base font-bold text-slate-100">{{ groupInfo.file_title }}</span>
@@ -737,17 +686,12 @@ const toggleCurrentFavorite = () => {
           </div>
           <div class="col-span-2 flex flex-col pt-3 border-t border-slate-700/30">
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Период обучения</span>
-            <!-- ДИНАМИЧЕСКИЕ ДАТЫ -->
             <span class="text-sm font-medium text-slate-200">{{ formattedSemesterDates }}</span>
           </div>
         </div>
       </div>
 
-    <!-- КНОПКА ОРИГИНАЛЬНОГО РАСПИСАНИЯ -->
-<!-- КНОПКИ ДЕЙСТВИЙ В ШТОРКЕ -->
       <div class="mt-4 flex flex-col gap-2">
-        
-        <!-- Кнопка Добавить/Удалить из избранного (Не показывается для основной группы) -->
         <button 
           v-if="store.viewContext !== 'main'"
           @click="toggleCurrentFavorite"
@@ -764,7 +708,6 @@ const toggleCurrentFavorite = () => {
           {{ store.isFavorite(groupInfo.group_id) ? 'Удалить из избранного' : 'Добавить в избранное' }}
         </button>
 
-        <!-- КНОПКА ОРИГИНАЛЬНОГО РАСПИСАНИЯ -->
         <button 
           v-if="originalExcelUrl" 
           @click="isExcelModalOpen = true"
@@ -778,12 +721,10 @@ const toggleCurrentFavorite = () => {
       </div>
     </BottomSheet>
 
-<!-- === ПОЛНОЭКРАННОЕ ОКНО EXCEL === -->
-    <!-- Используем Transition для красивого появления поверх всего -->
+    <!-- === ПОЛНОЭКРАННОЕ ОКНО EXCEL === -->
     <Transition name="fade">
       <div v-if="isExcelModalOpen" class="fixed inset-0 z-[100] flex flex-col bg-slate-950">
         
-        <!-- Шапка модалки -->
         <div class="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0 shadow-md z-10">
           <div class="flex items-center gap-3 pr-4 overflow-hidden">
              <div class="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-500 shrink-0">
@@ -796,9 +737,7 @@ const toggleCurrentFavorite = () => {
           </button>
         </div>
 
-        <!-- Контейнер для iframe (flex-1 занимает всю оставшуюся высоту) -->
         <div class="flex-1 w-full bg-slate-900 relative">
-          <!-- Скелетон загрузки (крутится под iframe, пока тот грузится) -->
           <div class="absolute inset-0 flex flex-col items-center justify-center space-y-4 opacity-50">
             <svg class="w-8 h-8 animate-spin text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -806,10 +745,8 @@ const toggleCurrentFavorite = () => {
             <span class="text-sm font-semibold text-slate-400">Загрузка документа...</span>
           </div>
 
-          <!-- Сам iframe -->
-          <!-- z-10 перекрывает скелетон, как только прогрузится -->
           <iframe 
-            :src="originalExcelUrl" 
+            :src="originalExcelUrl || undefined" 
             class="absolute inset-0 w-full h-full border-0 z-10 bg-white" 
             allowfullscreen
           ></iframe>
@@ -820,53 +757,98 @@ const toggleCurrentFavorite = () => {
 
   </div>
 </template>
-<style scoped>
+ <style scoped>
+
 /* Общие настройки скорости и плавности (как в iOS) */
+
 .slide-left-enter-active,
+
 .slide-left-leave-active,
+
 .slide-right-enter-active,
+
 .slide-right-leave-active {
+
   transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+
 }
+
 
 /* === АНИМАЦИЯ ВПЕРЕД (Свайп влево, следующий день) === */
+
 /* Новый день вылетает справа */
+
 .slide-left-enter-from {
+
   opacity: 0;
+
   transform: translateX(30px);
-}
-/* Старый день улетает влево */
-.slide-left-leave-to {
-  opacity: 0;
-  transform: translateX(-30px);
+
 }
 
-/* === АНИМАЦИЯ НАЗАД (Свайп вправо, прошлый день) === */
-/* Новый день вылетает слева */
-.slide-right-enter-from {
+/* Старый день улетает влево */
+
+.slide-left-leave-to {
+
   opacity: 0;
+
   transform: translateX(-30px);
+
 }
-/* Старый день улетает вправо */
-.slide-right-leave-to {
+
+
+/* === АНИМАЦИЯ НАЗАД (Свайп вправо, прошлый день) === */
+
+/* Новый день вылетает слева */
+
+.slide-right-enter-from {
+
   opacity: 0;
-  transform: translateX(30px);
+
+  transform: translateX(-30px);
+
 }
+
+/* Старый день улетает вправо */
+
+.slide-right-leave-to {
+
+  opacity: 0;
+
+  transform: translateX(30px);
+
+}
+
 
 
 /* === АНИМАЦИЯ КНОПОК ШАПКИ (ГОРИЗОНТАЛЬНАЯ БЕЗ СКАЧКОВ ВЫСОТЫ) === */
+
 .action-btns-move,
+
 .action-btns-enter-active,
+
 .action-btns-leave-active {
+
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
 }
+
 .action-btns-enter-from,
+
 .action-btns-leave-to {
+
   opacity: 0;
+
   transform: scale(0.9) translateX(10px);
+
 }
+
 /* position: absolute вырывает кнопку из верстки при удалении, чтобы высота/ширина родителя не дергалась */
+
 .action-btns-leave-active {
+
   position: absolute;
+
 }
-</style>
+
+</style> 

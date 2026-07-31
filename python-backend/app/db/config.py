@@ -6,14 +6,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    DB_USER: str
-    DB_PASSWORD: str
-    DB_HOST: str
-    DB_PORT: int = 5432
-    DB_NAME: str
+    IS_PRODUCTION: bool
+
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
+    POSTGRES_PORT: str = "5432"
+    POSTGRES_HOST: str = "postgres"
+    POSTGRES_OUTSIDE_PORT: str = "?"
     REDIS_URL: str = "redis://127.0.0.1:6379/0"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    DOWNLOAD_DIR: str = "dev/shm"
+    DLQ_DIR: str
+    KUMA_URL: str = ""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 try:

@@ -1,4 +1,3 @@
-import json
 import redis.asyncio as aioredis
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Literal, List
@@ -14,11 +13,15 @@ class ProxySettings(BaseSettings):
     PROXY_PORT: str
     PROXY_LOGIN_PARSING: str
     PROXY_PASSWORD_PARSING: str
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    REDIS_URL: str = "redis://localhost:6379/0"
+    KUMA_URL: str = ""
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 try:
-    proxy = ProxySettings()  # pyright: ignore[reportCallIssue]
+    config = ProxySettings()  # pyright: ignore[reportCallIssue]
 
 except ValidationError as e:
     print("\n" + "=" * 50)
@@ -38,7 +41,6 @@ except ValidationError as e:
 # INFO: ================== PROXY =================================
 # INFO: =================== REDIS ===================================
 
-REDIS_URL = "redis://localhost:6379/0"
 
 STATS_KEY = "observer:stats:last_run"
 
@@ -52,13 +54,15 @@ DOWNLOADER_QUEUE = "downloader:dowload_queue"
 CPP_QUEUE = "parser:ready_schedules"  # Очередь для плюсового парсера
 
 
-redis_pool = aioredis.Redis.from_url(REDIS_URL, decode_responses=True)
+redis_pool = aioredis.Redis.from_url(config.REDIS_URL, decode_responses=True)
 
 
 # INFO: =================== REDIS ===================================
 
 
 # INFO: =================== SCHEMAS ===================================
+
+URL_TO_PARSE = "https://rguk.ru/students/schedule/"
 
 
 class NotCheckedURL(BaseModel):

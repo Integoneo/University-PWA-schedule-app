@@ -8,11 +8,6 @@ const goBack = () => {
   router.back()
 }
 
-const makePrimary = (group: any) => {
-  store.setGroup(group)
-  store.addToast(`Группа ${group.group_name} теперь основная`, 'success')
-}
-
 const removeFavorite = (group: any) => {
   store.toggleFavorite(group)
   store.addToast(`Удалено из избранного`, 'info')
@@ -47,7 +42,6 @@ const promptClearCache = () => {
 <template>
   <div class="h-full w-full bg-slate-950 flex flex-col pt-12 pb-12 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
     
-  <!-- Добавили скрытие скроллбара в главный div -->
     <!-- Идеальная шапка со стрелочкой "Назад" -->
     <div class="px-4 mb-6">
       <button @click="goBack" class="flex items-center gap-2 -ml-2 p-2 text-slate-400 hover:text-white transition-colors active:scale-95">
@@ -112,50 +106,5 @@ const promptClearCache = () => {
       </div>
 
     </div>
-
-    <!-- === УНИВЕРСАЛЬНАЯ МОДАЛКА === -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <!-- Фон (блюр). @click здесь закроет модалку при клике вне окна -->
-        <div v-if="isModalOpen" @click="closeModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[200] flex items-center justify-center p-5 pointer-events-auto">
-          
-          <!-- Само окно. @click.stop запрещает закрытие при клике внутри окна -->
-          <div @click.stop class="modal-box bg-slate-900 border border-slate-800 rounded-[2rem] p-6 w-full max-w-sm shadow-2xl flex flex-col gap-5">
-            
-            <div class="flex flex-col gap-2.5">
-              <h3 class="text-xl font-bold text-white leading-tight">{{ modalConfig.title }}</h3>
-              <p class="text-sm text-slate-400 leading-relaxed">{{ modalConfig.message }}</p>
-            </div>
-            
-            <div class="flex gap-3 mt-2">
-              <button @click="closeModal" class="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl transition-colors">
-                Отмена
-              </button>
-              <button @click="modalConfig.action" class="flex-1 py-3.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold border border-red-500/20 rounded-xl transition-colors">
-                {{ modalConfig.confirmText }}
-              </button>
-            </div>
-            
-          </div>
-
-        </div>
-      </Transition>
-    </Teleport>
   </div>
 </template>
-
-<style scoped>
-/* Анимация Модального окна (Фон + Само окно) */
-.modal-enter-active, .modal-leave-active {
-  transition: opacity 0.25s ease;
-}
-.modal-enter-active .modal-box, .modal-leave-active .modal-box {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.modal-enter-from, .modal-leave-to {
-  opacity: 0;
-}
-.modal-enter-from .modal-box, .modal-leave-to .modal-box {
-  transform: scale(0.95) translateY(15px);
-}
-</style>

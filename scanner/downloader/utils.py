@@ -10,17 +10,17 @@ from functools import wraps
 from aiohttp import ClientSession
 from shared import (
     BAN_TIME,
-    DOWNLOAD_DIR,
+    config,
     NewMessage,
     redis_pool,
     logger,
-    proxy,
+    PROXY_URL_PARSING,
     DOWNLOADER_DLQ,
 )
 
 
 # Создаем папку для загрузок, если её нет
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+# os.makedirs(config.SHARED_RAM_DIR, exist_ok=True)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
@@ -30,7 +30,15 @@ HEADERS = {
     "Connection": "keep-alive",
 }
 
-PROXY_URL_PARSING = f"http://{proxy.PROXY_LOGIN_PARSING}:{proxy.PROXY_PASSWORD_PARSING}@{proxy.PROXY_HOST}:{proxy.PROXY_PORT}"
+
+async def ping_kuma(session: aiohttp.ClientSession) -> None:
+    if config.KUMA_URL:
+        try:
+            # Просто делаем легкий запрос и даже не читаем ответ
+            async with session.get(config.KUMA_URL):
+                pass
+        except Exception as e:
+            logger.error(f"Не удалось пингануть Kuma: {e}")
 
 
 def get_dir_size(path=".") -> int:

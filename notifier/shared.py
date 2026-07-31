@@ -8,6 +8,8 @@ import redis.asyncio as aioredis
 import sys
 import json
 
+from utils import ping_kuma
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -15,18 +17,22 @@ logger = logging.getLogger("Notifier")
 
 
 class ProxySettings(BaseSettings):
-    PROXY_HOST: str
-    PROXY_PORT: str
+    PROXY_HOST_TG: str
+    PROXY_PORT_TG: str
     PROXY_LOGIN_TG: str
     PROXY_PASSWORD_TG: str
     TG_BOT_TOKEN: str
     TG_CHAT_ID: str
+    REDIS_URL: str = "redis://localhost:6379/0"
+    KUMA_URL: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 try:
-    proxy = ProxySettings()  # pyright: ignore
+    config = ProxySettings()  # pyright: ignore
 except ValidationError as e:
     logger.fatal("🚨 ОШИБКА ЗАПУСКА: Отсутствуют или неверны настройки окружения!")
     for error in e.errors():
@@ -34,7 +40,6 @@ except ValidationError as e:
     os._exit(0)
 
 
-REDIS_URL = "redis://localhost:6379/0"
 STREAM_NAME = "notifier:queue"
 GROUP_NAME = "notifier"
 CONSUMER_NAME = "notifier"
@@ -63,12 +68,13 @@ def fatal_die(message: str, exit_code: int = 1):
 
 class SafeRedis:
     def __init__(self) -> None:
-        self.redis_pool = aioredis.from_url(REDIS_URL, decode_responses=True)
+        self.redis_pool = aioredis.from_url(config.REDIS_URL, decode_responses=True)
         self.is_redis_alive = False
 
     async def _ensure_connection(self):
         waiting_flag = False
         while not self.is_redis_alive:
+            await ping_kuma(None)
             try:
                 await self.redis_pool.ping()
                 logger.info("🟢 Связь с Redis установлена/восстановлена!")

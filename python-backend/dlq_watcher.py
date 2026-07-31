@@ -5,27 +5,25 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from redis.asyncio import Redis
 import logging
+from app.utils import redis_client
+from app.db.config import settings
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger("DLQ_Watcher")
 
-# --- Конфигурация путей ---
-# Корневая папка (исходя из того, что файл в University-schedule-app/python_backend)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Пока не на проде, используем temp_downloads
-DOWNLOAD_DIR = Path("/dev/shm")
+DOWNLOAD_DIR = Path(f"{settings.DOWNLOAD_DIR}")
 
 # Папка DLQ
-DLQ_DIR = Path(
-    "/home/integoneo/MyProjects/University-schedule-app/dlq/schedule_lessons"
-)
+DLQ_DIR = Path(f"{settings.DLQ_DIR}")
 
 # --- Конфигурация Redis ---
 DLQ_QUEUE_KEY = "parser:dlq"
 READY_SCHEDULES_KEY = "parser:ready_schedules"
+
+DLQ_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_last_modified_by(filepath: str) -> str | None:
@@ -58,8 +56,11 @@ async def check_dlq_files(redis_client: Redis):
         return
 
     # В dlq_items: ключ - это ИМЯ ФАЙЛА, значение - сырой JSON payload
-    for filename, payload_str in dlq_items.items():
+    for raw_filename, raw_payload in dlq_items.items():
         try:
+            # Раскодируем байты в нормальные строки
+            filename = raw_filename.decode("utf-8")
+            payload_str = raw_payload.decode("utf-8")
             dlq_filepath = DLQ_DIR / filename
 
             # 1. Если файла физически нет в DLQ (удалили руками как мусор)
@@ -96,7 +97,6 @@ async def check_dlq_files(redis_client: Redis):
 
 async def dlq_watcher_loop():
     """Главный цикл демона"""
-    redis_client = Redis(host="127.0.0.1", port=6379, db=0, decode_responses=True)
     logger.info(f"Запуск DLQ Watcher. Ждем файлов в папке: {DLQ_DIR} ...")
 
     while True:

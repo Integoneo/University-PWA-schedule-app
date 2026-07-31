@@ -1,10 +1,10 @@
 from typing import Literal, List
 from pydantic import BaseModel, ConfigDict, field_validator
 import json
-from app.db.cache import redis_pool
 import logging
 import redis.asyncio as aioredis
 from app.db.config import settings
+import urllib.request
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,6 +23,15 @@ logger = get_logger(__name__)
 REDIS = settings.REDIS_URL
 
 redis_client = aioredis.from_url(REDIS)
+
+
+def ping_kuma_sync(url: str):
+    """Синхронная функция, которая быстро отправляет GET-запрос"""
+    try:
+        # timeout=2 означает, что если Кума тупит, мы не ждем дольше 2 секунд
+        urllib.request.urlopen(url, timeout=2)
+    except Exception as e:
+        logger.warning(f"Не удалось отправить пинг в Kuma: {e}")
 
 
 class NewMessage(BaseModel):

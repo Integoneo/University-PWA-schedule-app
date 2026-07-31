@@ -1,5 +1,3 @@
-from os import wait
-from anyio import sleep
 from fastapi import APIRouter, Depends, Header, Response, status, HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +7,6 @@ from typing import List, Optional
 import hashlib
 import json
 import redis.asyncio as aioredis
-import asyncio
 
 from app.db.engine import get_async_session  # Сессия для PostgreSQL
 from app.db.cache import (

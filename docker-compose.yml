@@ -1,21 +1,228 @@
-version: '3.8'
+x-logging: &default-logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"   # Размер одного файла лога (например, 10 МБ)
+      max-file: "3"
+
 
 services:
-  db:
+  #INFO: ==========================================================
+  postgres:
     image: postgres:15-alpine
-    container_name: schedule_postgres
+    container_name: postgres
+    <<: *default-logging
     restart: unless-stopped
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: secretpassword
-      POSTGRES_DB: University_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} 
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      # ВАЖНО: слева порт твоего ноута (5433), справа порт внутри контейнера (5432)
-      - "5433:5432"
+      - "127.0.0.1:${POSTGRES_PORT}:${POSTGRES_PORT}"
     volumes:
-      # Сохраняем данные БД физически на диске, чтобы они не удалились при остановке контейнера
       - ./init-db-extensions.sql:/docker-entrypoint-initdb.d/init-db-extensions.sql
-      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres/:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      retries: 5
+  #INFO: ==========================================================
+  redis_db:
+    image: redis:8.8.1-alpine
+    container_name: redis_db
+    <<: *default-logging
+    restart: unless-stopped
+    # Защищаюсь от кривых патчей Редиса
+    user: "1000:1000"
+    environment:
+      REDIS_OUTSIDE_PORT: ${REDIS_OUTSIDE_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    ports:
+      - "127.0.0.1:${REDIS_PORT}:${REDIS_PORT}"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s      # Проверять каждые 5 секунд
+      timeout: 3s       # Ждать ответа не больше 3 секунд
+      retries: 3        # Если 3 раза подряд упал — контейнер болен
+      start_period: 5s 
+    volumes:
+      - ./data/redis:/data
+  #INFO: ==========================================================
+  backend:
+    build: ./python-backend
+    container_name: fast-api
+    user: "1000:1000"
+    <<: *default-logging
+    restart: unless-stopped
+    environment: 
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_HOST: postgres
+      REDIS_URL: ${REDIS_URL}
+      DOWNLOAD_DIR: ${DOWNLOAD_DIR}
+      DLQ_DIR: ${DLQ_DIR}
+      KUMA_URL: ${KUMA_URL_PYTHON_WORKER}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis_db:
+        condition: service_healthy
+    volumes:
+      - shared_ramdisk:${DOWNLOAD_DIR}
+      - ./data/dlq:${DLQ_DIR}
+  #INFO: ==========================================================
+  observer:
+    build: ./scanner/observer
+    container_name: observer
+    <<: *default-logging
+    restart: unless-stopped
+    environment:
+      PROXY_HOST: ${PROXY_HOST}
+      PROXY_PORT: ${PROXY_PORT}
+      PROXY_LOGIN_PARSING: ${PROXY_LOGIN_PARSING}
+      PROXY_PASSWORD_PARSING: ${PROXY_PASSWORD_PARSING}
+      REDIS_URL: ${REDIS_URL}
+      KUMA_URL: ${KUMA_URL_OBSERVER}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis_db:
+        condition: service_healthy
+  #INFO: ==========================================================
+  downloader:
+    build: ./scanner/downloader
+    container_name: downloader
+    user: "1000:1000"
+    <<: *default-logging
+    restart: unless-stopped
+    environment:
+      PROXY_HOST: ${PROXY_HOST}
+      PROXY_PORT: ${PROXY_PORT}
+      PROXY_LOGIN_PARSING: ${PROXY_LOGIN_PARSING}
+      PROXY_PASSWORD_PARSING: ${PROXY_PASSWORD_PARSING}
+      REDIS_URL: ${REDIS_URL}
+      DOWNLOAD_DIR: ${DOWNLOAD_DIR}
+      KUMA_URL: ${KUMA_URL_DOWNLOADER}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis_db:
+        condition: service_healthy
+    volumes:
+      - shared_ramdisk:${DOWNLOAD_DIR}
+  #INFO: ==========================================================
+  notifier:
+    build: ./notifier
+    container_name: notifier
+    <<: *default-logging
+    restart: unless-stopped
+    environment:
+      PROXY_HOST_TG: ${PROXY_HOST_TG}
+      PROXY_PORT_TG: ${PROXY_PORT_TG}
+      PROXY_LOGIN_TG: ${PROXY_LOGIN_TG}
+      PROXY_PASSWORD_TG: ${PROXY_PASSWORD_TG}
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN}
+      TG_CHAT_ID: ${TG_CHAT_ID}
+      REDIS_URL: ${REDIS_URL}
+      KUMA_URL: ${KUMA_URL_NOTIFIER}
+    depends_on:
+      redis_db:
+        condition: service_healthy
+  #INFO: ==========================================================
+  frontend:
+    build: ./frontend  # Путь к папке с Vue проектом
+    container_name: frontend_nginx
+    <<: *default-logging
+    restart: unless-stopped
+    ports:
+      # Открываем 80 порт для всей локальной сети (0.0.0.0:80)
+      - "80:80"
+      # Сертификаты
+      - "443:443"
+    depends_on:
+      - backend
+    volumes:
+      - ./data/certbot/conf:/etc/letsencrypt:ro
+      - ./data/certbot/www:/var/www/certbot:ro
+  #INFO: ==========================================================
+  cpp_parser:
+    build: ./cpp-parser
+    container_name: cpp_parser
+    user: "1000:1000"
+    <<: *default-logging
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: redis_db
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_URL: tcp://default:${REDIS_PASSWORD}@redis_db:${REDIS_PORT}
+      DOWNLOAD_DIR: ${DOWNLOAD_DIR}
+      ARCHIVE_DIR: ${ARCHIVE_DIR}
+      DLQ_DIR: ${DLQ_DIR}
+      KUMA_URL: ${KUMA_URL_CPP}
+    depends_on:
+      redis_db:
+        condition: service_healthy
+    volumes:
+      - shared_ramdisk:${DOWNLOAD_DIR}
+      - ./data/dlq:${DLQ_DIR}
+      - ./data/archive:${ARCHIVE_DIR}
+  uptime-kuma:
+    image: louislam/uptime-kuma:2.4.0-slim
+    container_name: uptime_kuma
+    restart: unless-stopped
+    environment:
+      # Формат: протокол://пользователь:пароль@IP:порт
+      # (Если без пароля, то просто протокол://IP:порт)
+
+      PROXY_HOST_TG: ${PROXY_HOST_TG}
+      PROXY_PORT_TG: ${PROXY_PORT_TG}
+      PROXY_LOGIN_TG: ${PROXY_LOGIN_TG}
+      PROXY_PASSWORD_TG: ${PROXY_PASSWORD_TG}
+      NOTIFICATION_PROXY: "http://${PROXY_LOGIN_TG}:${PROXY_PASSWORD_TG}@${PROXY_HOST_TG}:${PROXY_PORT_TG}"
+    volumes:
+      - ./data/kuma:/app/data
+    ports:
+      - "127.0.0.1:3001:3001"
+  beszel-hub:
+    image: henrygd/beszel:latest
+    container_name: beszel_hub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8090" # Интерфейс будет доступен по туннелю на 8090 порту
+    volumes:
+      - ./data/beszel:/beszel_data
+
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    container_name: beszel_agent
+    restart: unless-stopped
+    network_mode: host # Агенту нужна сеть хоста, чтобы видеть реальную нагрузку сервера
+    environment:
+      PORT: 45876
+      # Вставить сюда публичный ключ после первой настройки
+      # KEY: "" 
+    volumes:
+      # Прокидываем сокет докера, чтобы он показывал, сколько ест КАЖДЫЙ контейнер (очень удобно!)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    restart: unless-stopped
+    volumes:
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+    # Каждые 12 часов проверяет, не истекает ли сертификат. 
+    # Если да — обновляет его в фоновом режиме.
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
 
 volumes:
-  postgres_data:
+  shared_ramdisk:
+      driver_opts:
+        type: tmpfs
+        device: tmpfs
+        o: size=128m,uid=1000

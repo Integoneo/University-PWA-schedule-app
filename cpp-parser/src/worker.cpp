@@ -4,6 +4,7 @@
 #include "XLSheet.hpp"
 #include <chrono>
 #include <config.hpp>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <nlohman-json/json.hpp>
@@ -308,7 +309,7 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 			string payload = root.dump(4);
 			vector<pair<string, string>> redis_msg = {{"payload", payload}, {"type", "lessons"}};
 
-			redis.xadd("db:parsed_lessons", "*", redis_msg);
+			redis.xadd(config::python_worker_stream, "*", redis_msg);
 
 			send_tg_alert("INFO", "Успешный парсинг группы", "Группа отправлена на обработку");
 			spdlog::info("Лист '{}' успешно отправлен. Институт: '{}', Курс: '{}', Группа: '{}'", wks.name(),
@@ -395,6 +396,17 @@ int main() {
 	spdlog::info("Ожидание файлов в очереди {}...", config::stream_name);
 
 	while (true) {
+
+		// INFO: UPTIME KUMA PING
+
+		if (!config::KUMA_URL.empty()) {
+			// Формируем команду curl в сайлент-режиме (-s)
+			// и глушим весь вывод (> /dev/null)
+			std::string cmd = "curl -s \"" + config::KUMA_URL + "\" > /dev/null";
+
+			// Запускаем системную команду
+			std::system(cmd.c_str());
+		}
 
 		json payload;
 		std::string msg_id = "";

@@ -12,6 +12,7 @@ from app.db.init_db import create_db_and_tables, insert_initial_config
 from worker import main_worker_loop
 from dlq_watcher import dlq_watcher_loop
 from app.utils import get_logger, send_tg_alert
+from app.db.config import settings
 
 # Импортируем роутер
 from app.api.router import api_router
@@ -57,13 +58,28 @@ async def lifespan(app: FastAPI):
 
 
 # Инициализация приложения FastAPI
-app = FastAPI(title="University Schedule API", lifespan=lifespan)
+app = FastAPI(
+    title="Schedule API",
+    docs_url=None if settings.IS_PRODUCTION else "/docs",
+    redoc_url=None if settings.IS_PRODUCTION else "/redoc",
+    openapi_url=None if settings.IS_PRODUCTION else "/openapi.json",
+    lifespan=lifespan,
+)
 
-origins = [
-    "http://192.168.31.233:5173",
-    "http://localhost:5173",
-    "http://localhost:8080",
-]
+# 2. Настраиваем CORS
+if settings.IS_PRODUCTION:
+    # На проде разрешаем запросы ТОЛЬКО с твоего домена
+    origins = [
+        "https://kosyga.ru",
+        "https://www.kosyga.ru",
+    ]
+else:
+    # Для локальной разработки разрешаем всё
+    origins = [
+        "http://192.168.31.233",
+        "http://localhost:5173",
+        "http://localhost:8080",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -109,7 +125,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(api_router, prefix="/api/v1")
 
 
-# Простой тестовый эндпоинт
 @app.get("/ping")
 async def ping():
     return {"status": "ok", "message": "API works!"}
