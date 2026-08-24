@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Импортируем синхронные функции инициализации БД
 from app.db.init_db import create_db_and_tables, insert_initial_config
 
-# Импортируем нашего воркера
+# Worker
 from worker import main_worker_loop
 from dlq_watcher import dlq_watcher_loop
 from app.utils import get_logger, send_tg_alert
@@ -66,28 +66,29 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 2. Настраиваем CORS
+# CORS
 if settings.IS_PRODUCTION:
-    # На проде разрешаем запросы ТОЛЬКО с твоего домена
     origins = [
         "https://kosyga.ru",
         "https://www.kosyga.ru",
     ]
-else:
-    # Для локальной разработки разрешаем всё
-    origins = [
-        "http://192.168.31.233",
-        "http://localhost:5173",
-        "http://localhost:8080",
-    ]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Для локальной разработки
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.exception_handler(Exception)

@@ -5,7 +5,7 @@ import sys
 from typing import Literal, List
 from pydantic import BaseModel, ConfigDict, field_validator, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+import os
 
 DOWNLOADER_QUEUE = "downloader:dowload_queue"
 
@@ -40,6 +40,7 @@ class AppSettings(BaseSettings):
     PROXY_PASSWORD_PARSING: str = ""
     KUMA_URL: str = ""
 
+    IS_PRODUCTION: bool = False
     # Игнорируем лишние переменные из .env, которые не нужны этому скрипту
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
@@ -54,7 +55,10 @@ except ValidationError as e:
     sys.exit(1)
 
 
-PROXY_URL_PARSING = f"http://{config.PROXY_LOGIN_PARSING}:{config.PROXY_PASSWORD_PARSING}@{config.PROXY_HOST}:{config.PROXY_PORT}"
+PROXY_URL_PARSING = None
+
+if config.IS_PRODUCTION:
+    PROXY_URL_PARSING = f"http://{config.PROXY_LOGIN_PARSING}:{config.PROXY_PASSWORD_PARSING}@{config.PROXY_HOST}:{config.PROXY_PORT}"
 
 
 # Создаем папки физически, чтобы скрипт не падал при первом запуске

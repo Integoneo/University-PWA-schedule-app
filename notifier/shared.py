@@ -8,7 +8,6 @@ import redis.asyncio as aioredis
 import sys
 import json
 
-from utils import ping_kuma
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -72,6 +71,7 @@ class SafeRedis:
         self.is_redis_alive = False
 
     async def _ensure_connection(self):
+        from utils import ping_kuma
         waiting_flag = False
         while not self.is_redis_alive:
             await ping_kuma(None)

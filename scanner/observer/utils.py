@@ -8,6 +8,7 @@ import aiohttp
 import asyncio
 import logging
 import json
+import os
 
 from shared import NewMessage, config
 
@@ -32,8 +33,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Observer")
 
+PROXY_URL_PARSING = None
 
-PROXY_URL_PARSING = f"http://{config.PROXY_LOGIN_PARSING}:{config.PROXY_PASSWORD_PARSING}@{config.PROXY_HOST}:{config.PROXY_PORT}"
+if config.IS_PRODUCTION:
+    PROXY_URL_PARSING = f"http://{config.PROXY_LOGIN_PARSING}:{config.PROXY_PASSWORD_PARSING}@{config.PROXY_HOST}:{config.PROXY_PORT}"
 
 
 async def ping_kuma(session: aiohttp.ClientSession) -> None:

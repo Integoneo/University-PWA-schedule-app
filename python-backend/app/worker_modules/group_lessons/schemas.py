@@ -106,39 +106,3 @@ class SchedulePayloadSchema(BaseModel):
     @classmethod
     def normalize_educational_form(cls, v: str):
         return v.strip().title()
-
-    @model_validator(mode="after")
-    def normalize_institute_names(self) -> "SchedulePayloadSchema":
-        IGNORED_WORDS = {
-            "И",
-            "В",
-            "НА",
-            "С",
-            "К",
-            "ПО",
-            "ЗА",
-            "О",
-            "ОБ",
-            "У",
-            "А",
-            "НО",
-        }
-
-        raw_split = self.institute.split()
-        short_name_chars = []
-
-        for i, word in enumerate(raw_split):
-            if word.upper() in IGNORED_WORDS:
-                raw_split[i] = word.lower()
-                short_name_chars.append(raw_split[i][0])
-            else:
-                raw_split[i] = word.capitalize()
-                short_name_chars.append(raw_split[i][0])
-
-        # Перезаписываем полное имя красивым (с заглавными буквами)
-        self.institute = " ".join(raw_split)
-
-        # Заполняем наше новое поле аббревиатурой (ИМиР)
-        self.institute_short_name = "".join(short_name_chars)
-
-        return self
