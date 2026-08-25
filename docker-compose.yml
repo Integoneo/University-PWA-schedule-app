@@ -132,7 +132,7 @@ services:
       - local
       - prod
     <<: *default-logging
-    restart: unless-stopped
+    restart: on-failure:3
     environment:
       PROXY_HOST: ${PROXY_HOST:-}
       PROXY_PORT: ${PROXY_PORT:-}
