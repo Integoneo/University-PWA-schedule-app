@@ -30,8 +30,7 @@ async def process_schedule(
 
     # === БЛОК 1: ИНСТИТУТ И ГРУППА ===
     request = select(Institute).where(
-        func.similarity(Institute.name, schedule.institute) >= 0.90,
-        Institute.short_name == schedule.institute_short_name,
+        func.similarity(Institute.name, schedule.institute) >= 0.90
     )
     inst_match = (await session.scalars(request)).first()
 
