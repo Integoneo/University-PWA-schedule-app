@@ -29,21 +29,38 @@ export const api = {
     }
   },
 
-  // 2. Институты и Группы
+// 2. Институты и Группы (С УМНЫМ ОФФЛАЙНОМ)
   async getInstitutes() {
     const cached = localStorage.getItem('api_institutes')
-    if (cached) return JSON.parse(cached)
 
     try {
+      // 1. Всегда пытаемся сходить в сеть за свежими данными
       const response = await fetch(`${API_URL}/institutes`)
       if (!response.ok) throw new Error('Ошибка загрузки институтов')
+      
       const data = await response.json()
-      localStorage.setItem('api_institutes', JSON.stringify(data))
+      const newDataString = JSON.stringify(data)
+
+      // 2. Если данные скачались успешно, тихо обновляем локальный кэш
+      if (cached !== newDataString) {
+        localStorage.setItem('api_institutes', newDataString)
+      }
+
+      // 3. Отдаем свежие данные
       return data
+      
     } catch (error) {
+      // 4. МАГИЯ ОФФЛАЙНА: Сюда мы попадем, если нет интернета (fetch упадет).
+      // Если есть кэш — спасаем ситуацию и отдаем его!
+      if (cached) {
+        return JSON.parse(cached)
+      }
+      
+      // Если сети нет и кэша тоже нет (первый вход) — прокидываем ошибку дальше
       throw error
     }
   },
+
 
   // 3. Расписание группы (С МОЩНЫМ ОФФЛАЙН-КЭШЕМ)
 async getSchedule(groupId: string | number) {
