@@ -1,0 +1,4 @@
+# Скрываем сторонние библиотеки из статистики языков
+cpp-parser/include/nlohman-json/** linguist-vendored
+cpp-parser/include/spdlog/** linguist-vendored
+cpp-parser/libs/** linguist-vendored
