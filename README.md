@@ -135,9 +135,23 @@ docker compose --profile local up --build
 
 ```
 
+> 💡 **Примечание по загрузке образов:**  
+> Если при загрузке базовых образов (PostgreSQL/Redis) возникают сетевые задержки или таймауты Docker Hub, рекомендуется настроить локальные зеркала в `/etc/docker/daemon.json` (или Docker Desktop -> Docker Engine):
+> ```json
+> {
+>   "registry-mirrors": [
+>     "[https://mirror.gcr.io](https://mirror.gcr.io)",
+>     "[https://dockerhub.timeweb.cloud](https://dockerhub.timeweb.cloud)"
+>   ]
+> }
+> ```
+
 ### 3. Доступ к сервисам
 
 * **Swagger API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
 * **Frontend Application:** [http://localhost:80](http://localhost:80)
 * **PostgreSQL:** `localhost:5432` (по умолчанию: user=`admin`, pass=`super_password`, db=`database`)
 * **Redis:** `localhost:6379`
+
+
+
