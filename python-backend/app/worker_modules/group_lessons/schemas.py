@@ -82,8 +82,10 @@ class SchedulePayloadSchema(BaseModel):
     course: Optional[str] = Field(default=None, alias="course")
     education_form: Optional[str] = Field(default=None, alias="education-form")
 
-    start_education_date: date = Field(alias="start-education-date")
-    end_education_date: date = Field(alias="end-education-date")
+    start_education_date: Optional[date] = Field(
+        alias="start-education-date", default=None
+    )
+    end_education_date: Optional[date] = Field(alias="end-education-date", default=None)
 
     # ❗️ Ключ обязан быть в JSON, и в списке должна быть минимум 1 пара
     lessons: List[LessonSchema] = Field(min_length=1)
@@ -93,6 +95,8 @@ class SchedulePayloadSchema(BaseModel):
     @field_validator("start_education_date", "end_education_date", mode="before")
     @classmethod
     def parse_dates(cls, v):
+        if isinstance(v, str) and v == "":
+            return None
         if isinstance(v, str):
             return datetime.strptime(v, "%d.%m.%Y").date()
         return v

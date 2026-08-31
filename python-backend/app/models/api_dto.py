@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
 from datetime import time, date
 
@@ -46,9 +48,18 @@ class LessonPWA(BaseModel):
 
 class GroupScheduleResponse(BaseModel):
     status: str
-    start_education_date: date
-    end_education_date: date
+    start_education_date: Optional[date]
+    end_education_date: Optional[date]
     view_url: Optional[str]
     lessons: List[LessonPWA]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InstallPWAPayload(BaseModel):
+    screen_width: int = Field(gt=0, le=99999)
+    screen_height: int = Field(gt=0, le=99999)
+    device_ram_GB: int = Field(gt=0, le=128)
+    device_cpu_count: int = Field(gt=0, le=64)
 
     model_config = ConfigDict(from_attributes=True)

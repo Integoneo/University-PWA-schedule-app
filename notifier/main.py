@@ -44,7 +44,7 @@ async def main():
                 )
 
                 # Если и в PEL пусто — уходим на следующий круг
-                if not response or not response[0][1]:  # pyright: ignore завали ебальник
+                if not response or not response[0][1]:  # pyright: ignore
                     if not waiting_flag:
                         waiting_flag = True
                         logger.info("Нахожусь в режиме ожидания")
@@ -54,15 +54,15 @@ async def main():
 
             waiting_flag = False
 
-            _, messages = response[0]  # pyright: ignore завали ебальник
-            redis_msg_id, data = messages[0]  # pyright: ignore завали ебальник
+            _, messages = response[0]  # pyright: ignore
+            redis_msg_id, data = messages[0]  # pyright: ignore
 
             try:
                 new_message = NewMessage.model_validate(data)
             except ValidationError as e:
                 logger.error(f"Невалидный JSON: {e}")
                 # Сразу XACK, такое мы никогда не сможем распарсить
-                await redis_pool.xack(STREAM_NAME, GROUP_NAME, redis_msg_id)  # pyright: ignore завали ебальник
+                await redis_pool.xack(STREAM_NAME, GROUP_NAME, redis_msg_id)  # pyright: ignore
                 continue
 
             composite_key = (
@@ -75,7 +75,7 @@ async def main():
             try:
                 if massage_was_sended:
                     raw_message = await redis_pool.hget(HASH_NAME, composite_key)
-                    parsed_message = OldMessageHash.model_validate_json(raw_message)  # pyright: ignore завали ебальник
+                    parsed_message = OldMessageHash.model_validate_json(raw_message)  # pyright: ignore
 
                     updated_sub_msg = (
                         Counter(parsed_message.payload.sub_msg) + new_nofifies
@@ -127,8 +127,8 @@ async def main():
                         await redis_pool.hexpire(HASH_NAME, 86400, composite_key)
 
                 logger.info(f"Успешно обработано сообщение, ключ: {composite_key}")
-                await redis_pool.xack(STREAM_NAME, GROUP_NAME, redis_msg_id)  # pyright: ignore завали ебальник
-                await redis_pool.xdel(STREAM_NAME, redis_msg_id)  # pyright: ignore завали ебальник
+                await redis_pool.xack(STREAM_NAME, GROUP_NAME, redis_msg_id)  # pyright: ignore
+                await redis_pool.xdel(STREAM_NAME, redis_msg_id)  # pyright: ignore
 
                 if is_pending_task:
                     logger.info(f"✅ Успешно разобрана зависшая задача: {redis_msg_id}")

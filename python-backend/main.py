@@ -1,22 +1,17 @@
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 
-# Импортируем синхронные функции инициализации БД
-from app.db.init_db import create_db_and_tables, insert_initial_config
-
-# Worker
-from worker import main_worker_loop
-from dlq_watcher import dlq_watcher_loop
-from app.utils import get_logger, send_tg_alert
-from app.db.config import settings
-
-# Импортируем роутер
 from app.api.router import api_router
-
+from app.db.config import settings
+from app.db.init_db import create_db_and_tables, insert_initial_config
+from app.utils import get_logger, send_tg_alert
+from async_tasks.activity_tracker import tracker_main_loop
+from async_tasks.dlq_watcher import dlq_watcher_loop
+from async_tasks.worker import main_worker_loop
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 logger = get_logger(__name__)
 
@@ -36,6 +31,7 @@ async def lifespan(app: FastAPI):
     # 2. Запускаем воркер в фоновом режиме
     worker_task = asyncio.create_task(main_worker_loop())
     dlq_watcher_task = asyncio.create_task(dlq_watcher_loop())
+    tracker_task = asyncio.create_task(tracker_main_loop())
 
     yield
 
@@ -44,9 +40,10 @@ async def lifespan(app: FastAPI):
     # ========================================
     print("🛑 Завершение работы сервера...")
 
-    # 3. Отправляем сигнал отмены в бесконечный цикл воркера
+    # 3. Отправляем сигнал отмены в бесконечныe циклы
     worker_task.cancel()
     dlq_watcher_task.cancel()
+    tracker_task.cancel()
 
     # 4. Ждем, пока воркер завершит свои текущие дела (допишет в БД) и остановится
     try:

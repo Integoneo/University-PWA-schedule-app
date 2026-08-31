@@ -3,6 +3,7 @@ from app.db.config import settings
 
 from app.models.schedule import (
     AppConfig,
+    PWAInstalls,
     # Institute,
     # Group,
     # Teacher,
@@ -38,11 +39,11 @@ def insert_initial_config():
 
         if not existing_config:
             config_data = {
-                "semester_anchor_date": "2026-03-23",
-                "anchor_is_even": False,  # В JSON можно сразу использовать булево значение, а не строку "false"
+                "semester_anchor_date": "2026-09-07",
+                "anchor_is_even": True,
             }
 
-            # Создаем одну запись в базе, передавая словарь в ваше JSON-поле
+            # Создаем одну запись в базе, передавая словарь в JSON-поле
             anchor_config = AppConfig(key="semester_config", value=config_data)
 
             session.add(anchor_config)

@@ -1,11 +1,14 @@
 from typing import List, Optional, Any
 from datetime import time, date, datetime, timezone
-from sqlmodel import JSON, SQLModel, Field, Relationship, asc, ForeignKey, table
+from uuid import UUID
+from uuid6 import uuid7  # type: ignore
+from sqlmodel import JSON, SQLModel, Field, Relationship, asc, ForeignKey, table, true
 from enum import Enum
+from zoneinfo import ZoneInfo
 
 
-def get_utc_now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+def get_moscow_now() -> datetime:
+    return datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None)
 
 
 class GroupStatus(str, Enum):
@@ -16,7 +19,7 @@ class GroupStatus(str, Enum):
     # Всё успешно спарсилось, сохранено, готово к выдаче в PWA
     READY = "ready"
 
-    # Расписание пришло сломанным, деканат накосячил, нужна ручная проверка
+    # Расписание пришло сломанным
     ERROR = "error"
 
 
@@ -72,8 +75,8 @@ class Group(SQLModel, table=True):
         back_populates="groups"
     )
 
-    start_education_date: date
-    end_education_date: date
+    start_education_date: date | None = Field(default=None)
+    end_education_date: date | None = Field(default=None)
 
     view_url: str | None
     institute_id: int = Field(foreign_key="institutes.id")
@@ -84,7 +87,7 @@ class Group(SQLModel, table=True):
         return self.educational_form_obj.name if self.educational_form_obj else None
 
     updated_at: datetime = Field(
-        default_factory=get_utc_now, sa_column_kwargs={"onupdate": get_utc_now}
+        default_factory=get_moscow_now, sa_column_kwargs={"onupdate": get_moscow_now}
     )
 
     lessons: List["Lesson"] = Relationship(
@@ -149,3 +152,22 @@ class AppConfig(SQLModel, table=True):
     key: str = Field(primary_key=True, index=True, max_length=32)
 
     value: Any = Field(sa_type=JSON)
+
+
+class PWAInstalls(SQLModel, table=True):
+    __tablename__: str = "pwa_installs"  # type: ignore
+    device_id: UUID = Field(
+        primary_key=True, unique=True, index=True, default_factory=uuid7
+    )
+    ip_hash: str = Field(min_length=16, max_length=16)
+    os: str = Field(max_length=64)
+    browser: str = Field(max_length=64)
+    device_model: str = Field(max_length=64)
+    device_type: str = Field(max_length=16)
+    screen_resolution: str = Field(max_length=16)
+    device_cpu_count: int = Field(gt=0)
+    device_ram_GB: int = Field(gt=0)
+    last_activity: datetime | None = Field(
+        sa_column_kwargs={"onupdate": get_moscow_now}
+    )
+    created_at: datetime = Field(default_factory=get_moscow_now)

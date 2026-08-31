@@ -13,11 +13,15 @@ from app.db.cache import (
     get_redis_session,
     CacheKeys,
 )  # Сессия для Redis и ключи для кэша
-
+from app.api.endpoints.stats import track_activity_buffer
 from app.models.api_dto import GroupScheduleResponse, Institutes_PWA_schema, LessonPWA
-from app.models.schedule import AppConfig, Group, Institute, Lesson, Educational_form
+from app.models.schedule import AppConfig, Group, Institute, Lesson
 
-router = APIRouter(prefix="/client", tags=["Client App"])
+router = APIRouter(
+    prefix="/client",
+    tags=["Client App"],
+    dependencies=[Depends(track_activity_buffer)],
+)
 
 
 @router.get("/config")
@@ -190,8 +194,12 @@ async def get_group_schedule(
         # Собираем финальный словарь ответа
         final_dict = {
             "status": group_obj.status.value,  # "ready", "updating" или "error"
-            "start_education_date": group_obj.start_education_date.isoformat(),
-            "end_education_date": group_obj.end_education_date.isoformat(),
+            "start_education_date": group_obj.start_education_date.isoformat()
+            if group_obj.start_education_date is not None
+            else None,
+            "end_education_date": group_obj.end_education_date.isoformat()
+            if group_obj.end_education_date is not None
+            else None,
             "lessons": adapter.dump_python(pydantic_lessons, mode="json"),
             "view_url": group_obj.view_url,
         }

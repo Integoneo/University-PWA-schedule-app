@@ -89,7 +89,7 @@ def merge_lessons_logic(
                     # Берем следующую пару за новую основу
                     current_lesson = next_lesson
 
-            # 👈 Не забываем проставить номер самой последней паре в дне!
+            #  Не забываем проставить номер самой последней паре в дне!
             current_lesson.number_of_lesson = current_lesson_number
             merged_day.append(current_lesson)
 

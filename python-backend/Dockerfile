@@ -1,14 +1,17 @@
 FROM python:3.10-slim
 WORKDIR /app
 
-
+# Настройка зеркала для pip
+ENV PIP_EXTRA_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 ENV PIP_DEFAULT_TIMEOUT=60
-ENV PIP_RETRIES=5
+ENV PIP_RETRIES=10
 ENV PYTHONUNBUFFERED=1
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+  pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

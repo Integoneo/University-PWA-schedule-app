@@ -118,18 +118,20 @@ void process_excel_file(const string &filepath, json &payload, const string msg_
 
 		root["start-education-date"] = checkedHead.meta.startDate;
 		root["end-education-date"] = checkedHead.meta.endDate;
-
-		if (checkedHead.meta.startDate == "" || checkedHead.meta.endDate == "") {
-			list_has_human_errors = true;
-			file_has_trash_lists = true;
-			spdlog::warn("Не найдена дата начала или конца семестра");
-			send_tg_alert("WARN", "Группа отправлена в DLQ", "Не найдена дата начала или конца семестра");
-			checkedHead.readyHeader = false;
-			// Меняю состояние шапки что бы не парсить дальше этот лист
-			dlq_msg.emplace_back(std::to_string(dlq_msg.size()) + "Не найдена дата начала или конца семестра");
-			continue;
-		}
-
+    
+    // INFO: Деканат стал постоянно просто скипать эти даты
+    // Так уж и быть на фронтенде если нет даты не буду ограничивать расписание
+		// if (checkedHead.meta.startDate == "" || checkedHead.meta.endDate == "") {
+		// 	list_has_human_errors = true;
+		// 	file_has_trash_lists = true;
+		// 	spdlog::warn("Не найдена дата начала или конца семестра");
+		// 	send_tg_alert("WARN", "Группа отправлена в DLQ", "Не найдена дата начала или конца семестра");
+		// 	checkedHead.readyHeader = false;
+		// 	// Меняю состояние шапки что бы не парсить дальше этот лист
+		// 	dlq_msg.emplace_back(std::to_string(dlq_msg.size()) + "Не найдена дата начала или конца семестра");
+		// 	continue;
+		// }
+		//
 		root["view_url"] = safe_get_str(python_meta, "view_url", "");
 		root["logo_url"] = safe_get_str(python_meta, "logo_url", "");
 		root["lessons"] = json::array();

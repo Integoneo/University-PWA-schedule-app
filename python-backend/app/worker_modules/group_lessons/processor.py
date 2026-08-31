@@ -55,7 +55,7 @@ async def process_schedule(
         await redis_client.delete(CacheKeys.institutes)
         await session.flush()
 
-    # Pyright: Завали ебальник
+    # Pyright: ignore
     if inst_match.id is None:
         raise ORMStateError(
             f"Аномалия БД: Институту '{schedule.institute}' не присвоен ID"
@@ -95,6 +95,15 @@ async def process_schedule(
         notify_response = (group_match.id, True)
         # Если хэши совпали - расписание не менялось
         if group_match.data_hash == raw_hash and group_match.id is not None:
+            # В любом случае обновляем метаданные
+            group_match.start_education_date = schedule.start_education_date
+            group_match.end_education_date = schedule.end_education_date
+            group_match.view_url = schedule.view_url
+
+            session.add(group_match)
+            await session.flush()
+            await session.commit()
+            await redis_client.delete(CacheKeys.group(group_match.id))
             return (group_match.id, False)
 
         # 🛡 TYPE GUARD: Защита перед delete запросом
@@ -120,6 +129,8 @@ async def process_schedule(
         group_match.data_hash = raw_hash
         group_match.start_education_date = schedule.start_education_date
         group_match.end_education_date = schedule.end_education_date
+        group_match.view_url = schedule.view_url
+        group_match.course = schedule.course
         session.add(group_match)
         await session.flush()
 

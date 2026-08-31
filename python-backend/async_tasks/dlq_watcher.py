@@ -57,10 +57,11 @@ async def check_dlq_files(redis_client: Redis):
 
     # В dlq_items: ключ - это ИМЯ ФАЙЛА, значение - сырой JSON payload
     for raw_filename, raw_payload in dlq_items.items():
+        filename = ""
         try:
             # Раскодируем байты в нормальные строки
-            filename = raw_filename.decode("utf-8")
-            payload_str = raw_payload.decode("utf-8")
+            filename = raw_filename.decode("utf-8")  # type: ignore
+            payload_str = raw_payload.decode("utf-8")  # type: ignore
             dlq_filepath = DLQ_DIR / filename
 
             # 1. Если файла физически нет в DLQ (удалили руками как мусор)

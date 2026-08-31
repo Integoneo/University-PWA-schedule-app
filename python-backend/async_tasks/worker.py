@@ -63,13 +63,13 @@ async def main_worker_loop():
 
                 log_waiting_flag = True
 
-                _, messages = response[0]
-                msg_id, data = messages[0]
+                _, messages = response[0]  # type: ignore
+                msg_id, data = messages[0]  # type: ignore
                 try:
-                    payload_bytes = data.get(b"payload")
-                    raw_dict = json.loads(payload_bytes)
+                    payload_bytes = data.get(b"payload")  # type: ignore
+                    raw_dict = json.loads(payload_bytes)  # type: ignore
 
-                    check_hash = xxh64(payload_bytes).hexdigest()
+                    check_hash = xxh64(payload_bytes).hexdigest()  # type: ignore
 
                     validated_schedule = SchedulePayloadSchema(**raw_dict)
 
@@ -80,7 +80,7 @@ async def main_worker_loop():
                         )
 
                         logger.info(
-                            f"[{msg_id.decode()}] Успех: {validated_schedule.group}"
+                            f"[{msg_id.decode()}] Успех: {validated_schedule.group}"  # type: ignore
                         )
 
                         if should_notify:
@@ -116,8 +116,8 @@ async def main_worker_loop():
                         "Python worker", "ERROR", "Ошибка валидации расписания", inst
                     )
                     logger.error(str(e))
-                await redis_client.xack(STREAM_NAME, GROUP_NAME, msg_id)
-                await redis_client.xdel(STREAM_NAME, msg_id)
+                await redis_client.xack(STREAM_NAME, GROUP_NAME, msg_id)  # type: ignore
+                await redis_client.xdel(STREAM_NAME, msg_id)  # type: ignore
 
                 raw_dict = {}
 

@@ -1,31 +1,41 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { store } from './store'
+import { api } from './api'
 import { onMounted } from 'vue'
-const route = useRoute()
-const router = useRouter()
 import Modal from './components/Modal.vue'
 
+const route = useRoute()
+const router = useRouter()
+
 onMounted(() => {
-  // При перезапуске сбрасываем контекст на основную группу
+  // 1. При старте пробуем отправить статистику установки (если это standalone/PWA)
+  api.syncInstallStats()
+
+  // 2. Слушаем событие успешной установки в Chrome / Android
+  window.addEventListener('appinstalled', () => {
+    localStorage.setItem('pwa_install_pending', 'true')
+    api.syncInstallStats()
+  })
+
+  // 3. Слушаем появление интернета (если установка произошла в оффлайне)
+  window.addEventListener('online', () => {
+    api.syncInstallStats()
+  })
+
+  // 4. При перезапуске сбрасываем контекст на основную группу
   store.resetToMainGroup()
 
-  // ПЕРЕХВАТ PWA УСТАНОВКИ (Android / Chrome)
+  // 5. Перехват браузерного баннера PWA установки
   window.addEventListener('beforeinstallprompt', (e) => {
-    // Отменяем стандартный браузерный баннер
     e.preventDefault()
-    // Сохраняем событие, чтобы вызвать его своей красивой модалкой позже
     store.deferredPrompt = e
   })
-})
 
-onMounted(() => {
-  // Слушаем событие "возвращения" в приложение
+  // 6. Слушаем событие возвращения в приложение
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      // Когда юзер вернулся, даем WebView 100 миллисекунд на раздумья 
-      // и принудительно имитируем изменение размера окна. 
-      // Это заставит Android заново посчитать высоту экрана и вернуть навбар на место.
+      api.syncInstallStats()
       setTimeout(() => {
         window.dispatchEvent(new Event('resize'))
       }, 100)
@@ -55,32 +65,19 @@ const tabs = [
     icon: '<svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>'
   }
 ]
-
-
-onMounted(() => {
-  // При перезапуске приложения сбрасываем контекст просмотра на 🏠 Основную группу
-  store.resetToMainGroup()
-})
-
-
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault()
-  store.deferredPrompt = e
-  // ВРЕМЕННЫЙ ТОСТ ДЛЯ ДИАГНОСТИКИ:
-  store.addToast('Событие PWA поймано! Браузер готов к установке', 'success')
-})
 </script>
 
 <template>
   <main class="h-[100dvh] w-screen overflow-hidden bg-slate-950 relative">
     
-<router-view v-slot="{ Component, route }">
+    <router-view v-slot="{ Component, route }">
       <transition name="page-fade" mode="out-in">
         <keep-alive>
           <component :is="Component" :key="route.path" />
         </keep-alive>
       </transition>
     </router-view>
+
     <nav 
       v-if="!route.meta.hideNavbar"
       class="absolute bottom-0 left-0 right-0 bg-slate-950/75 backdrop-blur-2xl border-t border-slate-800/60 rounded-t-3xl z-50 flex items-start justify-between px-6 pt-2"
@@ -97,10 +94,11 @@ window.addEventListener('beforeinstallprompt', (e) => {
         <span class="text-[10px] font-semibold tracking-wide">{{ tab.name }}</span>
       </button>
     </nav>
-<!-- ГЛОБАЛЬНЫЕ УВЕДОМЛЕНИЯ (TOASTS) -->
+
+    <!-- ГЛОБАЛЬНЫЕ УВЕДОМЛЕНИЯ (TOASTS) -->
     <Teleport to="body">
       
-<!-- ТОСТЫ -->
+      <!-- ТОСТЫ -->
       <div class="fixed top-0 left-0 right-0 z-[100] flex flex-col items-center gap-2 px-4 pointer-events-none" style="padding-top: calc(env(safe-area-inset-top) + 16px);">
         <TransitionGroup name="toast">
           <div 
@@ -121,55 +119,44 @@ window.addEventListener('beforeinstallprompt', (e) => {
       </div>
 
       <!-- УНИВЕРСАЛЬНАЯ МОДАЛКА -->
-       <Modal/> 
+      <Modal />
     </Teleport>
   </main>
 </template>
 
 <style scoped>
-/* Анимация переключения вкладок Navbar */
 .page-fade-enter-active,
 .page-fade-leave-active {
   transition: opacity 0.15s ease-out, transform 0.15s ease-out;
 }
 
-/* Старт появления: прозрачность 0, масштаб чуть уменьшен (эффект "всплытия" из глубины) */
 .page-fade-enter-from {
   opacity: 0;
   transform: scale(0.97);
 }
 
-/* Конец исчезновения: прозрачность 0, масштаб чуть уменьшен */
 .page-fade-leave-to {
   opacity: 0;
   transform: scale(0.97);
 }
-/* === Анимация Тостов === */
 
-/* 1. Скорость и плавность. Поменяй 0.4s на 0.6s, чтобы сделать медленнее. 
-   cubic-bezier(0.16, 1, 0.3, 1) — это "пружинистый" отскок как в iOS. */
 .toast-move,
 .toast-enter-active, 
 .toast-leave-active { 
   transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); 
 }
 
-/* 2. Откуда тост появляется. Сейчас он вылетает сверху (-20px) и немного увеличен (scale 0.95) */
 .toast-enter-from { 
   opacity: 0; 
   transform: translateY(-20px) scale(0.95); 
 }
 
-/* 3. Куда тост улетает. Если хочешь, чтобы он улетал вправо — напиши translateX(50px) */
 .toast-leave-to { 
   opacity: 0; 
   transform: translateY(-20px) scale(0.95); 
 }
 
-/* 4. МАГИЯ VUE: Делает так, чтобы остальные тосты плавно подтягивались вверх, а не дергались */
 .toast-leave-active {
   position: absolute;
 }
-
-/* Анимация Модального окна (Фон + Само окно) */
 </style>

@@ -50,7 +50,7 @@ class NewMessage(BaseModel):
 
 
 async def send_tg_alert(
-    service: Literal["Python worker", "Fastapi server"],
+    service: Literal["Python worker", "Fastapi server", "Tracker scheduler"],
     msg_level: Literal["INFO", "WARN", "ERROR", "CRITICAL", "DEAD"],
     msg: str,
     details: List[str] | str,

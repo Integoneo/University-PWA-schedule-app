@@ -8,7 +8,7 @@ import { api } from '../api'
 const router = useRouter()
 
 // === 1. УМНАЯ МАТЕМАТИКА ДАТ И ВРЕМЕНИ ===
-const semesterStartDate = ref(new Date('2026-03-23T00:00:00')) 
+const semesterStartDate = ref(new Date('2026-08-31T00:00:00')) 
 const anchorIsEven = ref(false) 
 
 // Границы семестра с бэкенда
@@ -42,14 +42,19 @@ const formatStudyForm = (str: string) => {
 
 // Красивое форматирование периода обучения для шторки
 const formattedSemesterDates = computed(() => {
-  if (!educationStart.value || !educationEnd.value) return 'Загрузка...'
+  // Если грузим, и старых дат в памяти нет
+  if (isLoading.value && !educationStart.value && !educationEnd.value) return 'Загрузка...'
+  
+  // Если деканат не передал даты
+  if (!educationStart.value || !educationEnd.value) return 'Не указано'
+  
   const formatter = new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long' })
   const start = formatter.format(educationStart.value)
   const end = formatter.format(educationEnd.value)
   const year = educationEnd.value.getFullYear()
+  
   return `${start} — ${end} ${year}`
 })
-
 // === РЕАЛЬНАЯ СЕТЬ (API) ===
 const isLoading = ref(true)
 const allLessons = ref<any[]>([]) 
@@ -103,12 +108,15 @@ const fetchScheduleData = async (isManual = false) => {
     allLessons.value = data.lessons || []
     originalExcelUrl.value = data.view_url || null
     
+// ...
     // Запоминаем реальный статус от API-клиента для следующего спам-клика
     lastFetchStatus = data._meta?.status || 'actual'
     
-    if (data.start_education_date) educationStart.value = new Date(data.start_education_date)
-    if (data.end_education_date) educationEnd.value = new Date(data.end_education_date)
+    // === ОБНОВЛЕНО: Читаем даты (если их нет, безопасно ставим null) ===
+    educationStart.value = data.start_education_date ? new Date(data.start_education_date) : null
+    educationEnd.value = data.end_education_date ? new Date(data.end_education_date) : null
     
+    // === ОБНОВЛЕНО: Логика фокусировки на дне ===
     if (educationStart.value && educationEnd.value) {
       const todayTime = realToday.getTime()
       const startTimeSemester = educationStart.value.getTime()
@@ -119,8 +127,13 @@ const fetchScheduleData = async (isManual = false) => {
       } else if (todayTime < startTimeSemester) {
         selectedDate.value = new Date(educationStart.value)
       } else {
-        selectedDate.value = new Date(realToday)
+        // Если сегодня внутри семестра, ставим сегодняшний день 
+        // (но ТОЛЬКО при старте, чтобы не сбивать день при ручном обновлении)
+        if (!isManual) selectedDate.value = new Date(realToday)
       }
+    } else {
+      // Если дат семестра нет вообще — просто стартуем с сегодняшнего дня
+      if (!isManual) selectedDate.value = new Date(realToday)
     }
 
     if (isManual) {
@@ -129,7 +142,7 @@ const fetchScheduleData = async (isManual = false) => {
         await new Promise(res => setTimeout(res, 800 - elapsed))
       }
     }
-
+    // ...
     // === ЛОГИКА РАЗГОВОРЧИВОЙ КНОПКИ ===
     if (isManual) {
       if (lastFetchStatus === 'actual') {
