@@ -145,8 +145,8 @@ docker compose --profile local up --build
 >     "https://dockerhub.timeweb.cloud"
 >   ]
 > }
-
 > ```
+
 ### 3. Доступ к сервисам
 
 * **Swagger API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
