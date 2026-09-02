@@ -296,22 +296,40 @@ const isSameDate = (d1: Date, d2: Date) => {
 }
 const isRealToday = (d: Date) => isSameDate(d, realToday)
 
+// Вынесли парсер времени выше, чтобы его могли использовать обе функции
+const parseTime = (timeStr: string) => {
+  const [h, m] = timeStr.split(':').map(Number)
+  return h * 60 + m
+}
+
 const getLessonState = (lesson: any) => {
   if (!isRealToday(selectedDate.value)) return 'future'
-  const parseTime = (timeStr: string) => {
-    const [h, m] = timeStr.split(':').map(Number)
-    return h * 60 + m
-  }
+  
   const start = parseTime(lesson.start_time)
   const end = parseTime(lesson.end_time)
   const now = currentMinutes.value
 
   if (now > end) return 'past'
   if (now >= start && now <= end) return 'now'
-  if (start - now > 0 && start - now <= 15) return 'soon'
+  if (start - now > 0 && start - now <= 20) return 'soon' // Изменили лимит на 20 минут
   return 'future'
 }
 
+// Новая функция для счетчика минут
+const getTimeLeft = (lesson: any) => {
+  const start = parseTime(lesson.start_time)
+  return start - currentMinutes.value
+}
+
+// === ХАК ДЛЯ ТЕСТИРОВАНИЯ ВРЕМЕНИ ИЗ КОНСОЛИ БРАУЗЕРА ===
+// В консоли пиши: window.setMockTime(14, 20)
+if (typeof window !== 'undefined') {
+  (window as any).setMockTime = (hours: number, minutes: number) => {
+    clearInterval(timerId) // Выключаем системный таймер!
+    currentMinutes.value = hours * 60 + minutes
+    store.addToast(`Время заморожено на ${hours}:${minutes}`, 'info')
+  }
+}
 // === ЕДИНЫЙ КОНТРОЛЛЕР СОСТОЯНИЙ (STATE MACHINE) ===
 const currentState = computed(() => {
   if (isLoading.value) return 'loading'
@@ -622,10 +640,12 @@ const toggleCurrentFavorite = () => {
                     {{ lesson.type_of_lesson }}
                   </span>
                   
-                  <div v-if="getLessonState(lesson) === 'soon'" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
-                    <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
-                    <span class="text-[9px] font-bold uppercase tracking-wider text-amber-500">Скоро</span>
-                  </div>
+                <div v-if="getLessonState(lesson) === 'soon'" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+                  <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+                  <span class="text-[9px] font-bold uppercase tracking-wider text-amber-500">
+                    Через {{ getTimeLeft(lesson) }} мин
+                  </span>
+                </div>
                   
                   <div v-if="getLessonState(lesson) === 'now'" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
                     <div class="relative flex h-1.5 w-1.5">
