@@ -180,7 +180,7 @@ onMounted(() => {
   timerId = setInterval(() => {
     const now = new Date()
     currentMinutes.value = now.getHours() * 60 + now.getMinutes()
-  }, 60000)
+  }, 10000)
 
   // === ГИБРИДНЫЙ ВАРИАНТ УСТАНОВКИ PWA (СО СЧЕТЧИКОМ) ===
   setTimeout(() => {
@@ -564,7 +564,7 @@ const toggleCurrentFavorite = () => {
 
     </div>
     
-    <div class="flex-1 relative overflow-hidden" @touchstart="onTouchStart" @touchend="onTouchEnd">
+<div class="flex-1 relative overflow-hidden" @touchstart="onTouchStart" @touchend="onTouchEnd">
       <Transition :name="transitionName" >
         <div :key="selectedDate.getTime()" class="absolute inset-0 px-4 py-4 overflow-y-auto space-y-4 pb-24 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] overscroll-y-contain [-webkit-overflow-scrolling:touch]">
           
@@ -624,30 +624,37 @@ const toggleCurrentFavorite = () => {
                 'bg-slate-900/95 border border-indigo-500/40 shadow-[0_0_25px_rgba(99,102,241,0.15)]': getLessonState(lesson) === 'now'
               }"
             >
+              <!-- 1. ЛЕВАЯ КОЛОНКА -->
               <div class="w-[4.5rem] flex flex-col items-center pr-3 border-r shrink-0" :class="getLessonState(lesson) === 'now' ? 'border-indigo-500/30' : (getLessonState(lesson) === 'soon' ? 'border-amber-500/30' : 'border-slate-800/50')">
                 <span class="text-base font-bold" :class="getLessonState(lesson) === 'now' ? 'text-indigo-400' : (getLessonState(lesson) === 'soon' ? 'text-amber-400' : 'text-white')">
                   {{ lesson.start_time.slice(0, 5) }}
                 </span>
                 <span class="text-[13px] font-semibold text-slate-400 mt-0.5">{{ lesson.end_time.slice(0, 5) }}</span>
-                <span class="mt-auto text-[10px] uppercase font-bold tracking-widest text-slate-300 bg-slate-800/80 border border-slate-700/50 px-1.5 py-0.5 rounded-md whitespace-nowrap">
-                  {{ lesson.number_of_lesson }} пара
-                </span>
+                
+                <div class="mt-auto pt-2 w-full flex justify-center">
+                  <span class="text-[10px] uppercase font-bold tracking-widest text-slate-300 bg-slate-800/80 border border-slate-700/50 px-1.5 py-0.5 rounded-md whitespace-nowrap">
+                    {{ lesson.number_of_lesson }} пара
+                  </span>
+                </div>
               </div>
 
+              <!-- 2. ПРАВАЯ КОЛОНКА -->
               <div class="flex-1 pl-4 flex flex-col justify-center min-w-0">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md border" :class="getBadgeColor(lesson.type_of_lesson)">
+                
+                <!-- ВЕРХНИЙ РЯД (Бейджи) -->
+                <div v-if="lesson.type_of_lesson || ['soon', 'now'].includes(getLessonState(lesson))" class="flex items-center mb-2">
+                  <span v-if="lesson.type_of_lesson" class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md border" :class="getBadgeColor(lesson.type_of_lesson)">
                     {{ lesson.type_of_lesson }}
                   </span>
                   
-                <div v-if="getLessonState(lesson) === 'soon'" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
-                  <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
-                  <span class="text-[9px] font-bold uppercase tracking-wider text-amber-500">
-                    Через {{ getTimeLeft(lesson) }} мин
-                  </span>
-                </div>
+                  <div v-if="getLessonState(lesson) === 'soon'" class="ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+                    <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+                    <span class="text-[9px] font-bold uppercase tracking-wider text-amber-500">
+                      Через {{ getTimeLeft(lesson) }} мин
+                    </span>
+                  </div>
                   
-                  <div v-if="getLessonState(lesson) === 'now'" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                  <div v-if="getLessonState(lesson) === 'now'" class="ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
                     <div class="relative flex h-1.5 w-1.5">
                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
                       <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
@@ -656,9 +663,11 @@ const toggleCurrentFavorite = () => {
                   </div>
                 </div>
 
+                <!-- НАЗВАНИЕ ПАРЫ -->
                 <h3 class="text-sm font-semibold leading-snug text-slate-100 break-words whitespace-normal">{{ lesson.lesson_name }}</h3>
                 
-                <div class="mt-3 flex flex-col gap-3">
+                <!-- НИЖНИЙ РЯД (Место и преподы) -->
+                <div v-if="lesson.classroom || (lesson.teachers && lesson.teachers.length > 0)" class="mt-3 flex flex-col gap-3">
                   <div v-if="lesson.classroom" class="flex items-center text-xs text-slate-400 mt-0.5">
                     <div class="flex items-center shrink-0">
                       <svg class="w-3.5 h-3.5 mr-1.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" /></svg>
@@ -675,6 +684,7 @@ const toggleCurrentFavorite = () => {
                     <div class="flex flex-col gap-0.5"><span v-for="teacher in lesson.teachers" :key="teacher.id" class="truncate font-medium">{{ teacher.name }}</span></div>
                   </div>
                 </div>
+
               </div>
             </div>
           </div>
@@ -682,6 +692,8 @@ const toggleCurrentFavorite = () => {
       </Transition>
       <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pointer-events-none z-30"></div>
     </div>
+
+
 
     <!-- === УНИВЕРСАЛЬНАЯ ШТОРКА ГРУППЫ === -->
     <BottomSheet :is-open="isGroupSheetOpen" @close="isGroupSheetOpen = false">

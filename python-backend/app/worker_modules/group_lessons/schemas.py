@@ -68,12 +68,25 @@ class LessonSchema(BaseModel):
             raise ValueError("Обязательное строковое поле не может быть пустым")
         return v.strip()
 
+    @field_validator("teachers", mode="after")
+    @classmethod
+    def ban_words(cls, v: List[str]):
+        ban_set = {"препод", "ст", "стар", "стр", "доцент"}
+
+        def clean_word(text: str) -> str:
+            # Убираем неразрывные пробелы \xa0, точки и пробелы по краям
+            t = text.replace("\xa0", "").replace(".", "").strip().lower()
+            # Защита от случайной латиницы c / t вместо кириллицы
+            t = t.replace("c", "с").replace("t", "т")
+            return t
+
+        return [x for x in v if isinstance(x, str) and clean_word(x) not in ban_set]
+
 
 class SchedulePayloadSchema(BaseModel):
     # Ожидаем сырую строку из JSON, например "институт мехатроники..."
     institute: str = Field(alias="institute")
 
-    # Этого поля НЕТ в JSON! Мы сгенерируем его сами внутри валидатора
     institute_short_name: str = ""
 
     group: str = Field(alias="group")

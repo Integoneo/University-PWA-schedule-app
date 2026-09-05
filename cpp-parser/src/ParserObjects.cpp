@@ -264,10 +264,10 @@ void scanner::extractRow() {
 
 		if (counterOfEducationalStrings == 2) {
 			this->rowObject.storage[this->rowObject.Index::educationalPlaceEven] =
-				this->rowObject.storage[this->rowObject.educationalIndexes[0]];
+				this->rowObject.storage[this->rowObject.educationalIndexes[1]];
 
 			this->rowObject.storage[this->rowObject.Index::educationalPlaceOdd] =
-				this->rowObject.storage[this->rowObject.educationalIndexes[1]];
+				this->rowObject.storage[this->rowObject.educationalIndexes[0]];
 		}
 
 		// TODO: можно сделать это лаконичнее но я хз как пересоздать мой массив в rowObject и одновременно
