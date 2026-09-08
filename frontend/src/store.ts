@@ -139,4 +139,54 @@ export const store = reactive({
     }
     this.modal.isOpen = false
   },
+
+
+// === ОЧЕРЕДЬ УВЕДОМЛЕНИЙ (ДИРЕКТОР) ===
+displayQueue: [] as Array<{ id: string; delayAfter: number }>,
+activeEventId: null as string | null,
+activeEventDelay: 1000,
+isEventWaiting: false,
+queueTimer: null as any,
+
+enqueueEvent(id: string, delayAfter = 1000) {
+  // Не дублируем, если уже в очереди или активно прямо сейчас
+  if (this.displayQueue.some(e => e.id === id) || this.activeEventId === id) return
+  
+  this.displayQueue.push({ id, delayAfter })
+  this.processQueue()
+},
+
+processQueue() {
+  if (this.activeEventId || this.isEventWaiting || this.displayQueue.length === 0) return
+
+  const nextEvent = this.displayQueue.shift()
+  if (nextEvent) {
+    this.activeEventId = nextEvent.id
+    this.activeEventDelay = nextEvent.delayAfter
+  }
+},
+
+finishEvent(id: string) {
+  // Завершаем только если переданный ID совпадает с активным
+  if (this.activeEventId === id) {
+    const delay = this.activeEventDelay
+    this.activeEventId = null
+    this.isEventWaiting = true
+
+    if (this.queueTimer) clearTimeout(this.queueTimer)
+
+    this.queueTimer = setTimeout(() => {
+      this.isEventWaiting = false
+      this.processQueue()
+    }, delay)
+  }
+},
+
+// Аварийный сброс текущего события (например, при смене роута)
+skipCurrentEvent() {
+  if (this.activeEventId) {
+    const current = this.activeEventId
+    this.finishEvent(current)
+  }
+}
 })

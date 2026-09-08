@@ -1,0 +1,27 @@
+# Зависимости и сборка (на случай, если они появятся в корне)
+node_modules/
+dist/
+build/
+.cache/
+
+# Тяжелая статика и иконки (скрываем папки с десятками картинок)
+public/icons/
+src/assets/*.png
+src/assets/*.jpg
+src/assets/*.jpeg
+src/assets/*.svg
+
+# Конфиги окружения (чтобы Cline случайно не прочитал секреты)
+.env
+.env.*
+!.env.example
+
+# Логи и системные файлы
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Блокировка потенциальных артефактов Docker
+.dockerignore

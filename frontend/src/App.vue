@@ -4,7 +4,36 @@ import { store } from './store'
 import { api } from './api'
 import { onMounted } from 'vue'
 import Modal from './components/Modal.vue'
+import { useRegisterSW } from 'virtual:pwa-register/vue'
 
+
+const { needRefresh, updateServiceWorker } = useRegisterSW({
+  // 1. РАЗВЕДЧИК (Ищет обновления)
+  onRegistered(r) {
+    if (r) {
+      // Пока тестируешь, оставь 10 секунд. На проде вернешь 60 * 60 * 1000
+      setInterval(() => {
+        r.update()
+      }, 10 * 1000) 
+    }
+  },
+  
+  // 2. ТРИГГЕР (Срабатывает, когда обнова найдена и скачана)
+  onNeedRefresh() {
+    // Вместо мгновенного показа, вежливо встаем в очередь Директора
+    store.enqueueEvent('pwa_update', 0)
+  }
+})
+
+const applyUpdate = async () => {
+  store.finishEvent('pwa_update')
+  await updateServiceWorker(true) // Применяет кэш и перезагружает страницу
+}
+
+const closeUpdateBanner = () => {
+  store.finishEvent('pwa_update') // Убираем из очереди
+  needRefresh.value = false // На всякий случай гасим внутренний флаг плагина
+}
 const route = useRoute()
 const router = useRouter()
 
@@ -118,6 +147,33 @@ const tabs = [
         </TransitionGroup>
       </div>
 
+    <!-- ПЛАШКА ОБНОВЛЕНИЯ PWA -->
+    <Transition name="toast">
+      <div 
+        v-if="store.activeEventId === 'pwa_update'" 
+        class="fixed bottom-24 left-4 right-4 z-[90] p-4 bg-slate-900/95 border border-indigo-500/30 rounded-2xl shadow-2xl backdrop-blur-xl flex flex-col gap-3"
+      >
+        <div class="flex items-start gap-3">
+          <div class="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl shrink-0">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-white font-bold text-sm">Доступно обновление</span>
+            <span class="text-xs text-slate-400 leading-snug">Вышла новая версия Kosyga.Space. Обновите приложение, чтобы применить изменения.</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button @click="closeUpdateBanner" class="flex-1 py-2 text-xs font-semibold text-slate-400 hover:text-white bg-slate-800/60 rounded-xl transition-colors">
+            Позже
+          </button>
+          <button @click="applyUpdate" class="flex-1 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors shadow-lg shadow-indigo-900/50">
+            Обновить сейчас
+          </button>
+        </div>
+      </div>
+    </Transition>
       <!-- УНИВЕРСАЛЬНАЯ МОДАЛКА -->
       <Modal />
     </Teleport>

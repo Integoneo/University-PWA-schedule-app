@@ -26,6 +26,10 @@ const originalExcelUrl = ref<string | null>(null)
 // === ШТОРКА И ДАННЫЕ ИЗ STORE ===
 const isGroupSheetOpen = ref(false)
 
+
+
+
+
 const groupInfo = computed(() => store.currentViewingGroup || {
   institute_full_name: 'Загрузка...',
   institute_short_name: null,
@@ -175,65 +179,107 @@ watch(() => store.currentViewingGroup, () => {
 
 let timerId: ReturnType<typeof setInterval>
 
+// === ЛОГИКА PWA УСТАНОВКИ ===
+const showPwaPrompt = () => {
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone
+  
+  // Если уже установлено или юзер отказался - сразу скипаем событие в очереди
+  if (isStandalone || localStorage.getItem('pwa_prompt_ignored') === 'true') {
+    store.finishEvent('pwa_install')
+    return
+  }
+
+  let promptCount = parseInt(localStorage.getItem('pwa_prompt_count') || '0')
+  promptCount += 1
+  localStorage.setItem('pwa_prompt_count', promptCount.toString())
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+  const showCheckbox = promptCount >= 5 
+
+  const handleCheckUserIgnore = () => {
+    if (store.modal.checkboxValue) {
+      localStorage.setItem('pwa_prompt_ignored', 'true')
+    }
+  }
+
+  if (store.deferredPrompt) {
+    store.showModal({
+      title: 'Установить приложение',
+      message: 'Добавь Kosyga.Space на главный экран, чтобы расписание работало моментально и без интернета.',
+      confirmText: 'Установить',
+      type: 'primary',
+      showCheckbox: showCheckbox,
+      checkboxText: 'Больше не предлагать',
+      onConfirm: async () => {
+        handleCheckUserIgnore()
+        store.deferredPrompt.prompt()
+        await store.deferredPrompt.userChoice
+        store.deferredPrompt = null
+        store.finishEvent('pwa_install') // <--- ЗАВЕРШАЕМ СОБЫТИЕ
+      },
+      onCancel: () => {
+        handleCheckUserIgnore()
+        store.finishEvent('pwa_install') // <--- ЗАВЕРШАЕМ СОБЫТИЕ
+      }
+    })
+  } else {
+    store.showModal({
+      title: isIOS ? 'Установить на iPhone' : 'Установить приложение',
+      message: isIOS 
+        ? 'Нажми кнопку «Поделиться» (квадрат со стрелочкой) внизу экрана Safari и выберите «На экран Домой».'
+        : 'Нажми на три точки в правом верхнем углу меню Chrome и выбери «Установить приложение» (или «Добавить на гл. экран»).',
+      confirmText: 'Понятно',
+      type: 'primary',
+      showCheckbox: showCheckbox,
+      checkboxText: 'Больше не предлагать',
+      onConfirm: () => {
+        handleCheckUserIgnore()
+        store.finishEvent('pwa_install') // <--- ЗАВЕРШАЕМ СОБЫТИЕ
+      },
+      onCancel: () => {
+        handleCheckUserIgnore()
+        store.finishEvent('pwa_install') // <--- ЗАВЕРШАЕМ СОБЫТИЕ
+      }
+    })
+  }
+}
+
+
+
+// Выносим завершение гайда в отдельную функцию
+const completeSwipeGuide = () => {
+  if (store.activeEventId === 'swipe_guide') {
+    localStorage.setItem('has_seen_swipe_guide', 'true')
+    store.finishEvent('swipe_guide')
+  }
+}
+
+
+// СЛУШАЕМ ДИРЕКТОРА: обязательно с { immediate: true }
+watch(() => store.activeEventId, (newId) => {
+  if (newId === 'pwa_install') {
+    showPwaPrompt()
+  }
+}, { immediate: true })
+
 onMounted(() => {
   fetchScheduleData()
+
+  // 1. СТРОГИЙ ПОРЯДОК: ставим гайд первым
+  if (!localStorage.getItem('has_seen_swipe_guide')) {
+    store.enqueueEvent('swipe_guide', 1500) // после закрытия ждем 1.5 сек перед модалкой
+  }
+
+  // 2. Ставим плашку PWA следом (Директор покажет её строго ПОСЛЕ завершения гайда)
+  store.enqueueEvent('pwa_install', 0)
+
+  // Системный таймер
   timerId = setInterval(() => {
     const now = new Date()
     currentMinutes.value = now.getHours() * 60 + now.getMinutes()
   }, 10000)
-
-  // === ГИБРИДНЫЙ ВАРИАНТ УСТАНОВКИ PWA (СО СЧЕТЧИКОМ) ===
-  setTimeout(() => {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone
-    if (isStandalone) return
-
-    if (localStorage.getItem('pwa_prompt_ignored') === 'true') return
-
-    let promptCount = parseInt(localStorage.getItem('pwa_prompt_count') || '0')
-    promptCount += 1
-    localStorage.setItem('pwa_prompt_count', promptCount.toString())
-
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
-    const showCheckbox = promptCount >= 5 
-
-    const handleCheckUserIgnore = () => {
-      if (store.modal.checkboxValue) {
-        localStorage.setItem('pwa_prompt_ignored', 'true')
-      }
-    }
-
-    if (store.deferredPrompt) {
-      store.showModal({
-        title: 'Установить приложение',
-        message: 'Добавь Kosyga.Space на главный экран, чтобы расписание работало моментально и без интернета.',
-        confirmText: 'Установить',
-        type: 'primary',
-        showCheckbox: showCheckbox,
-        checkboxText: 'Больше не предлагать',
-        onConfirm: async () => {
-          handleCheckUserIgnore()
-          store.deferredPrompt.prompt()
-          await store.deferredPrompt.userChoice
-          store.deferredPrompt = null
-        },
-        onCancel: handleCheckUserIgnore
-      })
-    } else {
-      store.showModal({
-        title: isIOS ? 'Установить на iPhone' : 'Установить приложение',
-        message: isIOS 
-          ? 'Нажми кнопку «Поделиться» (квадрат со стрелочкой) внизу экрана Safari и выберите «На экран Домой».'
-          : 'Нажми на три точки в правом верхнем углу меню Chrome и выбери «Установить приложение» (или «Добавить на гл. экран»).',
-        confirmText: 'Понятно',
-        type: 'primary',
-        showCheckbox: showCheckbox,
-        checkboxText: 'Больше не предлагать',
-        onConfirm: handleCheckUserIgnore,
-        onCancel: handleCheckUserIgnore
-      })
-    }
-  }, 3500)
 })
+
 
 onUnmounted(() => {
   clearInterval(timerId)
@@ -358,6 +404,8 @@ const changeDay = (delta: number) => {
   selectedDate.value = newDate
 }
 
+
+
 const onTouchStart = (e: TouchEvent) => {
   touchStartX.value = e.changedTouches[0].screenX
   touchStartY.value = e.changedTouches[0].screenY
@@ -366,11 +414,19 @@ const onTouchStart = (e: TouchEvent) => {
 const onTouchEnd = (e: TouchEvent) => {
   const deltaX = e.changedTouches[0].screenX - touchStartX.value
   const deltaY = e.changedTouches[0].screenY - touchStartY.value
-  if (Math.abs(deltaY) > Math.abs(deltaX)) return
-  if (deltaX > 40) changeDay(-1)
-  else if (deltaX < -40) changeDay(1)
-}
 
+  if (Math.abs(deltaY) > Math.abs(deltaX)) return
+
+  if (Math.abs(deltaX) > 40) {
+    if (deltaX > 40) changeDay(-1)
+    else changeDay(1)
+
+    if (store.activeEventId === 'swipe_guide') {
+      completeSwipeGuide()
+      store.addToast('Отлично! Расписание листается свайпами', 'success')
+    }
+  }
+}
 // === ФУНКЦИЯ КОПИРОВАНИЯ РАСПИСАНИЯ ===
 const copyDaySchedule = async () => {
   if (currentLessons.value.length === 0) return
@@ -430,6 +486,7 @@ const getBadgeColor = (type: string) => {
   if (t.includes('лек')) return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
   if (t.includes('пр')) return 'bg-orange-500/10 text-orange-400 border-orange-500/20'
   if (t.includes('лаб')) return 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+  if (t.includes('дист')) return 'bg-blue-500/10 text-blue-400 border-blue-500/20'
   return 'bg-slate-500/10 text-slate-400 border-slate-500/20'
 }
 
@@ -527,7 +584,7 @@ const toggleCurrentFavorite = () => {
       </div>
     </div>
     
-    <div class="px-4 py-2 relative flex flex-col items-end">
+  <div class="px-4 pt-2 pb-0 relative z-20 flex flex-col items-end">
       
       <div class="relative flex w-full bg-slate-900/60 rounded-2xl p-1 backdrop-blur-sm border border-slate-800 z-10">
         <div 
@@ -690,6 +747,26 @@ const toggleCurrentFavorite = () => {
           </div>
         </div>
       </Transition>
+      <!-- === ИНТЕРАКТИВНЫЙ ГАЙД (КОМПАКТНЫЙ И ОПУЩЕН НИЖЕ) === -->
+      <Transition name="fade">
+        <div 
+          v-if="store.activeEventId === 'swipe_guide'" 
+          @click="completeSwipeGuide"
+          class="absolute inset-0 z-40 flex items-center justify-center pt-32 bg-slate-950/20 backdrop-blur-[2px] cursor-pointer touch-manipulation"
+        >
+          <!-- Сама плашка: уменьшены паддинги (px-4 py-2.5) и скругления (rounded-2xl) -->
+          <div 
+            class="flex flex-col items-center bg-slate-900/95 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-slate-700/60 shadow-xl pointer-events-auto active:scale-95 transition-transform"
+          >
+            <!-- Уменьшили руку с w-12 h-12 до w-7 h-7 -->
+            <svg class="w-8 h-8 text-indigo-400 animate-swipe-hand mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+            </svg>
+            <span class="text-xs font-semibold text-white tracking-wide">Свайпай дни</span>
+            <span class="text-[10px] text-slate-400">или нажми в любое место</span>
+          </div>
+        </div>
+      </Transition>
       <div class="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pointer-events-none z-30"></div>
     </div>
 
@@ -803,6 +880,18 @@ const toggleCurrentFavorite = () => {
   </div>
 </template>
  <style scoped>
+
+
+/* === АНИМАЦИЯ РУКИ (ГАЙД ПО СВАЙПУ) === */
+@keyframes swipe-hand {
+  0% { transform: translateX(15px) rotate(5deg); }
+  50% { transform: translateX(-15px) rotate(-10deg); }
+  100% { transform: translateX(15px) rotate(5deg); }
+}
+
+.animate-swipe-hand {
+  animation: swipe-hand 2s ease-in-out infinite;
+}
 
 /* Общие настройки скорости и плавности (как в iOS) */
 
