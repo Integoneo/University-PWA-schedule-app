@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import BottomSheet from './BottomSheet.vue'
 import { store } from '../store'
 import { api } from '../api'
+import { overlayManager } from '../composables/useOverlayManager'
 
 const router = useRouter()
 
@@ -180,12 +181,13 @@ watch(() => store.currentViewingGroup, () => {
 let timerId: ReturnType<typeof setInterval>
 
 // === ЛОГИКА PWA УСТАНОВКИ ===
+// Вызывается из overlayManager.onActivate когда 'pwa_install' становится активным
 const showPwaPrompt = () => {
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone
-  
-  // Если уже установлено или юзер отказался - сразу скипаем событие в очереди
+
+  // Если уже установлено или юзер отказался — сразу закрываем элемент очереди
   if (isStandalone || localStorage.getItem('pwa_prompt_ignored') === 'true') {
-    store.finishEvent('pwa_install')
+    overlayManager.dismiss('pwa_install')
     return
   }
 
@@ -194,7 +196,7 @@ const showPwaPrompt = () => {
   localStorage.setItem('pwa_prompt_count', promptCount.toString())
 
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
-  const showCheckbox = promptCount >= 5 
+  const showCheckbox = promptCount >= 5
 
   const handleCheckUserIgnore = () => {
     if (store.modal.checkboxValue) {
@@ -215,18 +217,18 @@ const showPwaPrompt = () => {
         store.deferredPrompt.prompt()
         await store.deferredPrompt.userChoice
         store.deferredPrompt = null
-        store.finishEvent('pwa_install') // <--- ЗАВЕРШАЕМ СОБЫТИЕ
+        overlayManager.dismiss('pwa_install')
       },
       onCancel: () => {
         handleCheckUserIgnore()
-        store.finishEvent('pwa_install') // <--- ЗАВЕРШАЕМ СОБЫТИЕ
+        overlayManager.dismiss('pwa_install')
       }
     })
   } else {
     store.showModal({
       title: isIOS ? 'Установить на iPhone' : 'Установить приложение',
-      message: isIOS 
-        ? 'Нажми кнопку «Поделиться» (квадрат со стрелочкой) внизу экрана Safari и выберите «На экран Домой».'
+      message: isIOS
+        ? 'Нажми кнопку «Поделиться» (квадрат со стрелочкой) внизу экрана Safari и выбери «На экран Домой».'
         : 'Нажми на три точки в правом верхнем углу меню Chrome и выбери «Установить приложение» (или «Добавить на гл. экран»).',
       confirmText: 'Понятно',
       type: 'primary',
@@ -234,46 +236,89 @@ const showPwaPrompt = () => {
       checkboxText: 'Больше не предлагать',
       onConfirm: () => {
         handleCheckUserIgnore()
-        store.finishEvent('pwa_install') // <--- ЗАВЕРШАЕМ СОБЫТИЕ
+        overlayManager.dismiss('pwa_install')
       },
       onCancel: () => {
         handleCheckUserIgnore()
-        store.finishEvent('pwa_install') // <--- ЗАВЕРШАЕМ СОБЫТИЕ
+        overlayManager.dismiss('pwa_install')
       }
     })
   }
 }
 
-
-
-// Выносим завершение гайда в отдельную функцию
+// Завершение гайда — вызывается при свайпе или нажатии кнопки
 const completeSwipeGuide = () => {
-  if (store.activeEventId === 'swipe_guide') {
+  if (overlayManager.state.activeItem?.id === 'swipe_guide') {
     localStorage.setItem('has_seen_swipe_guide', 'true')
-    store.finishEvent('swipe_guide')
+    overlayManager.dismiss('swipe_guide')
+  }
+}
+
+// Следим за активным элементом очереди: реагируем на pwa_install
+// (pwa_install — локальный элемент '/lessons', поэтому он активируется
+//  только когда мы здесь, и onActivate вызывает showPwaPrompt напрямую)
+watch(() => overlayManager.state.activeItem, (item) => {
+  if (item?.id === 'pwa_install') {
+    showPwaPrompt()
+  }
+})
+
+const isTouchDevice = ref(true) // По умолчанию считаем мобилкой
+
+
+// Функция-обработчик нажатий
+const onKeyDown = (e: KeyboardEvent) => {
+  // Защита: не реагируем, если юзер печатает в input или textarea
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+
+  const key = e.key.toLowerCase()
+  
+  if (key === 'arrowleft' || key === 'a' || key === 'ф') {
+    changeDay(-1)
+    handleGuideCompletion()
+  } else if (key === 'arrowright' || key === 'd' || key === 'в') {
+    changeDay(1)
+    handleGuideCompletion()
+  }
+}
+
+// Вынесем логику завершения гайда, чтобы не дублировать код
+const handleGuideCompletion = () => {
+  if (overlayManager.state.activeItem?.id === 'swipe_guide') {
+    completeSwipeGuide()
+    store.addToast(isTouchDevice.value ? 'Отлично! Расписание листается свайпами' : 'Отлично! Можно листать кнопками', 'success')
   }
 }
 
 
-// СЛУШАЕМ ДИРЕКТОРА: обязательно с { immediate: true }
-watch(() => store.activeEventId, (newId) => {
-  if (newId === 'pwa_install') {
-    showPwaPrompt()
-  }
-}, { immediate: true })
-
 onMounted(() => {
   fetchScheduleData()
 
-  // 1. СТРОГИЙ ПОРЯДОК: ставим гайд первым
+  isTouchDevice.value = window.matchMedia('(pointer: coarse)').matches
+  window.addEventListener('keydown', onKeyDown)
+
+  // 1. СТРОГИЙ ПОРЯДОК: гайд первым (локальный — только на /lessons)
   if (!localStorage.getItem('has_seen_swipe_guide')) {
-    store.enqueueEvent('swipe_guide', 1500) // после закрытия ждем 1.5 сек перед модалкой
+    overlayManager.enqueue({
+      id: 'swipe_guide',
+      type: 'guide',
+      scope: 'lessons',
+      delayBefore: 1500, // показываем через 1.5 с после открытия вкладки
+      delayAfter: 1500,  // после закрытия ждём 1.5 с перед следующим элементом
+    })
   }
 
-  // 2. Ставим плашку PWA следом (Директор покажет её строго ПОСЛЕ завершения гайда)
-  store.enqueueEvent('pwa_install', 0)
+  // 2. PWA-установка строго после гайда (глобальный — показывается на /lessons,
+  //    т.к. именно здесь watch выше вызовет showPwaPrompt)
+  overlayManager.enqueue({
+    id: 'pwa_install',
+    type: 'modal',
+    scope: 'global',
+    delayBefore: 4000,
+    delayAfter: 2000,
+  })
 
-  // Системный таймер
+  // Системный таймер обновления текущего времени
   timerId = setInterval(() => {
     const now = new Date()
     currentMinutes.value = now.getHours() * 60 + now.getMinutes()
@@ -282,6 +327,7 @@ onMounted(() => {
 
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown)
   clearInterval(timerId)
 })
 
@@ -421,7 +467,7 @@ const onTouchEnd = (e: TouchEvent) => {
     if (deltaX > 40) changeDay(-1)
     else changeDay(1)
 
-    if (store.activeEventId === 'swipe_guide') {
+    if (overlayManager.state.activeItem?.id === 'swipe_guide') {
       completeSwipeGuide()
       store.addToast('Отлично! Расписание листается свайпами', 'success')
     }
@@ -747,23 +793,37 @@ const toggleCurrentFavorite = () => {
           </div>
         </div>
       </Transition>
-      <!-- === ИНТЕРАКТИВНЫЙ ГАЙД (КОМПАКТНЫЙ И ОПУЩЕН НИЖЕ) === -->
-      <Transition name="fade">
-        <div 
-          v-if="store.activeEventId === 'swipe_guide'" 
-          @click="completeSwipeGuide"
-          class="absolute inset-0 z-40 flex items-center justify-center pt-32 bg-slate-950/20 backdrop-blur-[2px] cursor-pointer touch-manipulation"
-        >
-          <!-- Сама плашка: уменьшены паддинги (px-4 py-2.5) и скругления (rounded-2xl) -->
+        <!-- === ИНТЕРАКТИВНЫЙ ГАЙД === -->
+        <Transition name="fade">
           <div 
-            class="flex flex-col items-center bg-slate-900/95 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-slate-700/60 shadow-xl pointer-events-auto active:scale-95 transition-transform"
+            v-if="overlayManager.state.activeItem?.id === 'swipe_guide'" 
+            @click="completeSwipeGuide"
+            class="absolute inset-0 z-40 flex items-center justify-center pt-32 bg-slate-950/20 backdrop-blur-[2px] cursor-pointer touch-manipulation"
           >
-            <!-- Уменьшили руку с w-12 h-12 до w-7 h-7 -->
-            <svg class="w-8 h-8 text-indigo-400 animate-swipe-hand mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
-            </svg>
-            <span class="text-xs font-semibold text-white tracking-wide">Свайпай дни</span>
-            <span class="text-[10px] text-slate-400">или нажми в любое место</span>
+            <div class="flex flex-col items-center bg-slate-900/95 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-slate-700/60 shadow-xl pointer-events-auto active:scale-95 transition-transform text-center">
+              
+              <!-- Иконка руки для тач-устройств -->
+              <svg v-if="isTouchDevice" class="w-8 h-8 text-indigo-400 animate-swipe-hand mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+              </svg>
+              
+              <!-- Иконка кнопок для десктопа (Стрелочки + WASD) -->
+              <div v-else class="flex items-center gap-2 mb-2">
+                <div class="flex gap-1 text-indigo-400">
+                  <div class="w-6 h-6 flex items-center justify-center bg-slate-800 border border-slate-700 rounded-md text-xs font-bold shadow-sm">←</div>
+                  <div class="w-6 h-6 flex items-center justify-center bg-slate-800 border border-slate-700 rounded-md text-xs font-bold shadow-sm">→</div>
+                </div>
+                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">или</span>
+                <div class="flex gap-1 text-indigo-400">
+                <div class="w-6 h-6 flex items-center justify-center bg-slate-800 border border-slate-700 rounded-md text-[11px] font-bold shadow-sm">A</div>
+                <div class="w-6 h-6 flex items-center justify-center bg-slate-800 border border-slate-700 rounded-md text-[11px] font-bold shadow-sm">D</div>
+              </div>
+            </div>
+
+            <span class="text-xs font-semibold text-white tracking-wide">
+              {{ isTouchDevice ? 'Свайпай дни' : 'Листай дни на клавиатуре' }}
+            </span>
+            <span class="text-[10px] text-slate-400 mt-0.5">или нажми в любое место</span>
           </div>
         </div>
       </Transition>

@@ -5,34 +5,42 @@ import { api } from './api'
 import { onMounted } from 'vue'
 import Modal from './components/Modal.vue'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
+import { overlayManager } from './composables/useOverlayManager'
 
 
 const { needRefresh, updateServiceWorker } = useRegisterSW({
   // 1. РАЗВЕДЧИК (Ищет обновления)
   onRegistered(r) {
     if (r) {
-      // Пока тестируешь, оставь 10 секунд. На проде вернешь 60 * 60 * 1000
+      // Пока тестируешь, оставь 10 секунд. На проде вернёшь 60 * 60 * 1000
       setInterval(() => {
         r.update()
-      }, 10 * 1000) 
+      }, 10 * 1000)
     }
   },
-  
+
   // 2. ТРИГГЕР (Срабатывает, когда обнова найдена и скачана)
   onNeedRefresh() {
-    // Вместо мгновенного показа, вежливо встаем в очередь Директора
-    store.enqueueEvent('pwa_update', 0)
+    // Ставим в глобальную очередь — покажется на любой вкладке,
+    // но не на Welcome/Onboarding (blacklist в overlayManager)
+    overlayManager.enqueue({
+      id: 'pwa_update',
+      type: 'banner',
+      scope: 'global',
+      delayBefore: 0,
+      delayAfter: 0,
+    })
   }
 })
 
 const applyUpdate = async () => {
-  store.finishEvent('pwa_update')
-  await updateServiceWorker(true) // Применяет кэш и перезагружает страницу
+  overlayManager.dismiss('pwa_update')
+  await updateServiceWorker(true)
 }
 
 const closeUpdateBanner = () => {
-  store.finishEvent('pwa_update') // Убираем из очереди
-  needRefresh.value = false // На всякий случай гасим внутренний флаг плагина
+  overlayManager.dismiss('pwa_update')
+  needRefresh.value = false
 }
 const route = useRoute()
 const router = useRouter()
@@ -150,7 +158,7 @@ const tabs = [
     <!-- ПЛАШКА ОБНОВЛЕНИЯ PWA -->
     <Transition name="toast">
       <div 
-        v-if="store.activeEventId === 'pwa_update'" 
+        v-if="overlayManager.state.activeItem?.id === 'pwa_update'" 
         class="fixed bottom-24 left-4 right-4 z-[90] p-4 bg-slate-900/95 border border-indigo-500/30 rounded-2xl shadow-2xl backdrop-blur-xl flex flex-col gap-3"
       >
         <div class="flex items-start gap-3">
