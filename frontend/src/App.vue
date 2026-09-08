@@ -15,7 +15,7 @@ const { needRefresh, updateServiceWorker } = useRegisterSW({
       // Пока тестируешь, оставь 10 секунд. На проде вернёшь 60 * 60 * 1000
       setInterval(() => {
         r.update()
-      }, 10 * 1000)
+      }, 60 * 60 * 1000)
     }
   },
 
