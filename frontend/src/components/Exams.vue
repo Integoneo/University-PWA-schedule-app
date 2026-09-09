@@ -3,20 +3,20 @@
 </script>
 
 <template>
-  <div class="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 text-center pb-24 overflow-hidden relative">
+  <div class="h-[100dvh] w-full bg-page flex flex-col items-center justify-center p-6 text-center pb-24 overflow-hidden relative">
     
     <div class="relative mb-8">
       <!-- Еле заметная медленная пульсация (Дыхание) -->
       <div class="absolute inset-0 bg-amber-500 rounded-full animate-slow-pulse blur-xl"></div>
       
       <!-- Круглая плашка с иконкой -->
-      <div class="relative w-28 h-28 flex items-center justify-center bg-slate-900/80 border border-slate-800 rounded-full shadow-2xl backdrop-blur-md">
+      <div class="relative w-28 h-28 flex items-center justify-center bg-surface/80 border border-line rounded-full shadow-2xl backdrop-blur-md">
         <span class="text-5xl">🚧</span>
       </div>
     </div>
     
-    <h2 class="text-2xl font-bold text-white mb-3 tracking-tight">Экзамены в разработке</h2>
-    <p class="text-slate-400 text-sm leading-relaxed max-w-[280px]">
+    <h2 class="text-2xl font-bold text-primary mb-3 tracking-tight">Экзамены в разработке</h2>
+    <p class="text-muted text-sm leading-relaxed max-w-[280px]">
       Я уже активно работаю над этим разделом. Скоро добавлю сюда удобный и красивый просмотр расписания сессии!
     </p>
     

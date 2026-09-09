@@ -105,7 +105,7 @@ const tabs = [
 </script>
 
 <template>
-  <main class="h-[100dvh] w-screen overflow-hidden bg-slate-950 relative">
+  <main class="h-[100dvh] w-screen overflow-hidden bg-page relative">
     
     <router-view v-slot="{ Component, route }">
       <transition name="page-fade" mode="out-in">
@@ -117,7 +117,7 @@ const tabs = [
 
     <nav 
       v-if="!route.meta.hideNavbar"
-      class="absolute bottom-0 left-0 right-0 bg-slate-950/75 backdrop-blur-2xl border-t border-slate-800/60 rounded-t-3xl z-50 flex items-start justify-between px-6 pt-2"
+      class="absolute bottom-0 left-0 right-0 bg-page/75 backdrop-blur-2xl border-t border-line/60 rounded-t-3xl z-50 flex items-start justify-between px-6 pt-2"
       style="padding-bottom: env(safe-area-inset-bottom); height: calc(5rem + env(safe-area-inset-bottom));"
     >
       <button 
@@ -125,7 +125,7 @@ const tabs = [
         :key="tab.path"
         @click="router.push(tab.path)"
         class="relative flex flex-col items-center justify-start h-full pt-2 transition-colors duration-300 touch-manipulation flex-1"
-        :class="route.path === tab.path ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-400'"
+        :class="route.path === tab.path ? 'text-accent' : 'text-subtle hover:text-muted'"
       >
         <div v-html="tab.icon" class="mb-1 transition-transform duration-300" :class="route.path === tab.path ? '-translate-y-1 scale-110' : 'scale-100'"></div>
         <span class="text-[10px] font-semibold tracking-wide">{{ tab.name }}</span>
@@ -143,9 +143,9 @@ const tabs = [
             @click="store.removeToast(toast.id)"
             class="flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl pointer-events-auto backdrop-blur-md cursor-pointer hover:scale-[1.02] transition-transform"
             :class="{
-              'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400': toast.type === 'success',
-              'bg-red-500/10 border border-red-500/20 text-red-400': toast.type === 'error',
-              'bg-slate-800/80 border border-slate-700/50 text-white': toast.type === 'info'
+              'bg-success/10 border border-success/20 text-success': toast.type === 'success',
+              'bg-error/10 border border-error/20 text-error': toast.type === 'error',
+              'bg-raised/80 border border-line-muted/50 text-primary': toast.type === 'info'
             }"
           >
             <svg v-if="toast.type === 'error'" class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -159,24 +159,24 @@ const tabs = [
     <Transition name="toast">
       <div 
         v-if="overlayManager.state.activeItem?.id === 'pwa_update'" 
-        class="fixed bottom-24 left-4 right-4 z-[90] p-4 bg-slate-900/95 border border-indigo-500/30 rounded-2xl shadow-2xl backdrop-blur-xl flex flex-col gap-3"
+        class="fixed bottom-24 left-4 right-4 z-[90] p-4 bg-surface/95 border border-accent/30 rounded-2xl shadow-2xl backdrop-blur-xl flex flex-col gap-3"
       >
         <div class="flex items-start gap-3">
-          <div class="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl shrink-0">
+          <div class="p-2 bg-accent/20 text-accent rounded-xl shrink-0">
             <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </div>
           <div class="flex flex-col gap-1">
-            <span class="text-white font-bold text-sm">Доступно обновление</span>
-            <span class="text-xs text-slate-400 leading-snug">Вышла новая версия Kosyga.Space. Обновите приложение, чтобы применить изменения.</span>
+            <span class="text-primary font-bold text-sm">Доступно обновление</span>
+            <span class="text-xs text-muted leading-snug">Вышла новая версия Kosyga.Space. Обновите приложение, чтобы применить изменения.</span>
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <button @click="closeUpdateBanner" class="flex-1 py-2 text-xs font-semibold text-slate-400 hover:text-white bg-slate-800/60 rounded-xl transition-colors">
+          <button @click="closeUpdateBanner" class="flex-1 py-2 text-xs font-semibold text-muted hover:text-primary bg-raised/60 rounded-xl transition-colors">
             Позже
           </button>
-          <button @click="applyUpdate" class="flex-1 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors shadow-lg shadow-indigo-900/50">
+          <button @click="applyUpdate" class="flex-1 py-2 text-xs font-bold text-primary bg-accent-strong hover:bg-accent rounded-xl transition-colors shadow-lg shadow-indigo-900/50">
             Обновить сейчас
           </button>
         </div>

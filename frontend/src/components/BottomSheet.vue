@@ -55,14 +55,14 @@ const onTouchEnd = () => {
   <Teleport to="body">
     <!-- Затемнение фона -->
     <Transition name="fade">
-      <div v-if="isOpen" @click="emit('close')" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[60]"></div>
+      <div v-if="isOpen" @click="emit('close')" class="fixed inset-0 bg-page/60 backdrop-blur-sm z-[60]"></div>
     </Transition>
 
     <!-- Сама шторка -->
     <Transition name="slide-up">
       <div 
         v-if="isOpen"
-        class="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 rounded-t-[2rem] z-[70] shadow-[0_-10px_40px_rgba(0,0,0,0.3)] flex flex-col"
+        class="fixed bottom-0 left-0 right-0 bg-surface border-t border-line rounded-t-[2rem] z-[70] shadow-[0_-10px_40px_rgba(0,0,0,0.3)] flex flex-col"
         style="padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); max-height: 90vh;"
         :style="{ 
           transform: sheetY > 0 ? `translateY(${sheetY}px)` : '',
@@ -77,7 +77,7 @@ const onTouchEnd = () => {
           class="pt-4 pb-2 touch-none w-full flex flex-col shrink-0"
         >
           <!-- Ползунок -->
-          <div class="w-12 h-1.5 bg-slate-700/50 rounded-full mx-auto mb-4"></div>
+          <div class="w-12 h-1.5 bg-line-muted/50 rounded-full mx-auto mb-4"></div>
           
           <!-- Слот для заголовка -->
           <div v-if="$slots.header" class="px-5 w-full">

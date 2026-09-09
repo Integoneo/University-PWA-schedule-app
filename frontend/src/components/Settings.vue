@@ -87,66 +87,66 @@ const copyPhoneOnly = async () => {
 </script>
 
 <template>
-  <div class="h-full w-full bg-slate-950 flex flex-col pt-12 pb-24 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+  <div class="h-full w-full bg-page flex flex-col pt-12 pb-24 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
     
     <!-- Заголовок -->
     <div class="px-6 mb-8">
-      <h1 class="text-3xl font-bold text-white tracking-tight">Настройки</h1>
+      <h1 class="text-3xl font-bold text-primary tracking-tight">Настройки</h1>
     </div>
 
     <div class="flex flex-col px-4 gap-6">
       
       <!-- ЕДИНОЕ МЕНЮ НАСТРОЕК -->
-      <div class="bg-slate-900/60 border border-slate-800 rounded-3xl p-2 flex flex-col">
+      <div class="bg-surface/60 border border-line rounded-3xl p-2 flex flex-col">
         
         <!-- 1. Профиль и группы -->
-        <button @click="goToProfile" class="flex items-center justify-between p-4 hover:bg-slate-800/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
+        <button @click="goToProfile" class="flex items-center justify-between p-4 hover:bg-raised/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
           <div class="flex items-center gap-4">
-            <div class="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <div class="p-2.5 rounded-xl bg-accent/10 text-accent border border-accent/20">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
             </div>
-            <span class="text-base font-semibold text-slate-200">Профиль и группы</span>
+            <span class="text-base font-semibold text-secondary">Профиль и группы</span>
           </div>
-          <svg class="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+          <svg class="w-5 h-5 text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
 
-        <div class="h-px w-full bg-slate-800/50 my-1"></div>
+        <div class="h-px w-full bg-line/50 my-1"></div>
 
         <!-- 2. Поделиться с друзьями -->
-        <button @click="isShareSheetOpen = true" class="flex items-center justify-between p-4 hover:bg-slate-800/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
+        <button @click="isShareSheetOpen = true" class="flex items-center justify-between p-4 hover:bg-raised/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
           <div class="flex items-center gap-4">
-            <div class="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div class="p-2.5 rounded-xl bg-warning/10 text-warning border border-warning/20">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
             </div>
-            <span class="text-base font-semibold text-slate-200">Поделиться с друзьями</span>
+            <span class="text-base font-semibold text-secondary">Поделиться с друзьями</span>
           </div>
-          <svg class="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+          <svg class="w-5 h-5 text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
         
-        <div class="h-px w-full bg-slate-800/50 my-1"></div>
+        <div class="h-px w-full bg-line/50 my-1"></div>
 
         <!-- 3. О разработчике -->
-        <button @click="isDevSheetOpen = true" class="flex items-center justify-between p-4 hover:bg-slate-800/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
+        <button @click="isDevSheetOpen = true" class="flex items-center justify-between p-4 hover:bg-raised/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
           <div class="flex items-center gap-4">
-            <div class="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div class="p-2.5 rounded-xl bg-success/10 text-success border border-success/20">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
             </div>
-            <span class="text-base font-semibold text-slate-200">О разработчике</span>
+            <span class="text-base font-semibold text-secondary">О разработчике</span>
           </div>
-          <svg class="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+          <svg class="w-5 h-5 text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
 
-        <div class="h-px w-full bg-slate-800/50 my-1"></div>
+        <div class="h-px w-full bg-line/50 my-1"></div>
 
         <!-- 4. О приложении -->
-        <button @click="isAboutSheetOpen = true" class="flex items-center justify-between p-4 hover:bg-slate-800/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
+        <button @click="isAboutSheetOpen = true" class="flex items-center justify-between p-4 hover:bg-raised/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
           <div class="flex items-center gap-4">
-            <div class="p-2.5 rounded-xl bg-slate-800 text-slate-400 border border-slate-700/50">
+            <div class="p-2.5 rounded-xl bg-raised text-muted border border-line-muted/50">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </div>
-            <span class="text-base font-semibold text-slate-200">О приложении</span>
+            <span class="text-base font-semibold text-secondary">О приложении</span>
           </div>
-          <svg class="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+          <svg class="w-5 h-5 text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
 
       </div>
@@ -162,8 +162,8 @@ const copyPhoneOnly = async () => {
             i
           </div>
           <div class="flex flex-col min-w-0">
-            <span class="text-[11px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Разработчик</span>
-            <span class="text-xl font-bold text-white truncate">integoneo</span>
+            <span class="text-[11px] text-subtle font-bold uppercase tracking-widest mb-0.5">Разработчик</span>
+            <span class="text-xl font-bold text-primary truncate">integoneo</span>
           </div>
         </div>
       </template>
@@ -181,19 +181,19 @@ const copyPhoneOnly = async () => {
           </div>
         </button>
         
-<div class="h-px w-full bg-slate-800/50"></div>
+<div class="h-px w-full bg-line/50"></div>
 
         <!-- БЛОК ДОНАТОВ -->
         <div class="flex flex-col gap-3">
           
           <div class="flex flex-col mb-1">
-            <span class="text-lg font-bold text-white mb-1">Угостить латте ☕</span>
-            <span class="text-[11px] text-slate-400 leading-snug">
+            <span class="text-lg font-bold text-primary mb-1">Угостить латте ☕</span>
+            <span class="text-[11px] text-muted leading-snug">
               Перевод по номеру телефона (Сбербанк или Альфа-Банк). Любая поддержка помогает проекту жить и развиваться!
             </span>
           </div>
 
-          <button @click="copyPhoneOnly" class="w-full py-4 flex items-center justify-center gap-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold rounded-2xl transition-colors active:scale-[0.98]">
+          <button @click="copyPhoneOnly" class="w-full py-4 flex items-center justify-center gap-2.5 bg-raised hover:bg-raised/80 border border-line-muted text-secondary font-bold rounded-2xl transition-colors active:scale-[0.98]">
             <svg class="w-5 h-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
             Скопировать номер телефона
           </button>
@@ -205,7 +205,7 @@ const copyPhoneOnly = async () => {
     <BottomSheet :is-open="isShareSheetOpen" @close="isShareSheetOpen = false">
       <template #header>
         <div class="w-full text-center pb-2">
-          <h2 class="text-2xl font-bold text-white">Поделиться</h2>
+          <h2 class="text-2xl font-bold text-primary">Поделиться</h2>
         </div>
       </template>
       
@@ -217,16 +217,16 @@ const copyPhoneOnly = async () => {
         </div>
         
         <div class="text-center">
-          <h3 class="text-lg font-bold text-white mb-1">Kosyga.Space</h3>
-          <p class="text-sm text-slate-400 leading-snug">Пусть друзья наведут камеру,<br>чтобы открыть расписание</p>
+          <h3 class="text-lg font-bold text-primary mb-1">Kosyga.Space</h3>
+          <p class="text-sm text-muted leading-snug">Пусть друзья наведут камеру,<br>чтобы открыть расписание</p>
         </div>
 
         <div class="w-full flex gap-3 mt-2">
-           <button @click="copyLink" class="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-colors active:scale-[0.98] flex justify-center items-center gap-2 text-sm">
-             <svg class="w-5 h-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+           <button @click="copyLink" class="flex-1 py-3.5 bg-raised hover:bg-raised/80 text-primary font-bold rounded-xl transition-colors active:scale-[0.98] flex justify-center items-center gap-2 text-sm">
+             <svg class="w-5 h-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
              Ссылка
            </button>
-           <button @click="shareNative" class="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-colors active:scale-[0.98] flex justify-center items-center gap-2 text-sm shadow-lg shadow-indigo-900/50">
+           <button @click="shareNative" class="flex-1 py-3.5 bg-accent-strong hover:bg-accent text-primary font-bold rounded-xl transition-colors active:scale-[0.98] flex justify-center items-center gap-2 text-sm shadow-lg shadow-indigo-900/50">
              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
              Отправить...
            </button>
@@ -237,26 +237,26 @@ const copyPhoneOnly = async () => {
 <!-- 3. Шторка "О приложении" -->
     <BottomSheet :is-open="isAboutSheetOpen" @close="isAboutSheetOpen = false">
       <template #header>
-        <h2 class="text-2xl font-bold text-white mb-2">О приложении</h2>
+        <h2 class="text-2xl font-bold text-primary mb-2">О приложении</h2>
       </template>
       
-      <span class="text-indigo-400 font-bold text-sm tracking-widest uppercase mb-5 block mt-2">Версия 1.0.0 Alpha</span>
+      <span class="text-accent font-bold text-sm tracking-widest uppercase mb-5 block mt-2">Версия 1.0.0 Alpha</span>
       
       <div class="flex flex-col gap-4 mb-6">
-        <p class="text-slate-400 text-sm leading-relaxed">
+        <p class="text-muted text-sm leading-relaxed">
           Я разработал нативное стильное приложение для очень удобного и быстрого просмотра расписания. Приложение создавалось на чистом энтузиазме — так сказать, от студента для студентов!
         </p>
 
         <!-- Красивый блок дисклеймера из Welcome.vue -->
-        <div class="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-3">
-          <span class="text-amber-500 text-lg shrink-0">⚠️</span>
-          <p class="text-xs text-amber-500/80 leading-relaxed">
+        <div class="bg-warning/10 border border-warning/20 rounded-2xl p-4 flex gap-3">
+          <span class="text-warning text-lg shrink-0">⚠️</span>
+          <p class="text-xs text-warning/80 leading-relaxed">
             <strong>Отказ от ответственности:</strong> Приложение является лишь удобным зеркалом и транслирует данные с официального сайта вуза. Я не могу влиять на внезапные отмены пар, переносы кабинетов или ошибки деканата.
           </p>
         </div>
       </div>
 
-      <button @click="isAboutSheetOpen = false" class="w-full py-4 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-colors active:scale-[0.98]">
+      <button @click="isAboutSheetOpen = false" class="w-full py-4 bg-raised hover:bg-raised/80 text-primary font-bold rounded-xl transition-colors active:scale-[0.98]">
         Понятно, закрыть
       </button>
     </BottomSheet>

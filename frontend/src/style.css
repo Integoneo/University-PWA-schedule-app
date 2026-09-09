@@ -3,6 +3,73 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   ДИЗАЙН-ТОКЕНЫ — все цвета приложения живут здесь.
+   Для смены темы достаточно переопределить переменные ниже
+   через [data-theme="light"] на теге <html>.
+   ============================================================ */
+
+:root,
+[data-theme="dark"] {
+  /* --- Фоны (от самого тёмного к более светлому) --- */
+  --bg-page:    #020617;   /* slate-950 — базовый фон страницы */
+  --bg-surface: #0f172a;   /* slate-900 — карточки, панели, шторки */
+  --bg-raised:  #1e293b;   /* slate-800 — кнопки, инпуты, приподнятые элементы */
+
+  /* --- Текст (от яркого к приглушённому) --- */
+  --text-primary:   #ffffff;   /* белый — заголовки, важный текст */
+  --text-secondary: #e2e8f0;   /* slate-200 — основной текст */
+  --text-tertiary:  #cbd5e1;   /* slate-300 — вспомогательный текст */
+  --text-muted:     #94a3b8;   /* slate-400 — метаданные, плейсхолдеры */
+  --text-subtle:    #64748b;   /* slate-500 — иконки, очень тихий текст */
+
+  /* --- Линии / бордеры --- */
+  --line:       #1e293b;   /* slate-800 — основная граница */
+  --line-muted: #334155;   /* slate-700 — более заметная граница */
+
+  /* --- Акцент (Indigo / основной бренд-цвет) --- */
+  --accent:        #818cf8;   /* indigo-400 — текст, иконки, активные состояния */
+  --accent-strong: #4f46e5;   /* indigo-600 — фон основных CTA-кнопок */
+
+  /* --- Семантические состояния --- */
+  --success: #34d399;   /* emerald-400 — успех */
+  --warning: #fbbf24;   /* amber-400 — предупреждение */
+  --error:   #f87171;   /* red-400 — ошибка / опасное действие */
+}
+
+/* ============================================================
+   TAILWIND-МАППИНГ
+   @theme inline регистрирует CSS-переменные как Tailwind-цвета
+   с поддержкой opacity-модификаторов (/60, /10 и т.д.)
+   ============================================================ */
+
+@theme inline {
+  /* Фоны */
+  --color-page:    var(--bg-page);
+  --color-surface: var(--bg-surface);
+  --color-raised:  var(--bg-raised);
+
+  /* Текст */
+  --color-primary:   var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-tertiary:  var(--text-tertiary);
+  --color-muted:     var(--text-muted);
+  --color-subtle:    var(--text-subtle);
+
+  /* Линии */
+  --color-line:       var(--line);
+  --color-line-muted: var(--line-muted);
+
+  /* Акцент */
+  --color-accent:        var(--accent);
+  --color-accent-strong: var(--accent-strong);
+
+  /* Состояния */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error:   var(--error);
+}
+
 /* === ГЛОБАЛЬНАЯ БЛОКИРОВКА СКРОЛЛА === */
 html, body, #app {
   margin: 0;
@@ -11,7 +78,7 @@ html, body, #app {
   width: 100vw;
   overflow: hidden; /* Жестко обрубаем выход за границы */
   overscroll-behavior: none; /* Убиваем "резинку" и pull-to-refresh на мобилках */
-  background-color: #020617; /* Подставляем цвет slate-950, чтобы фон не моргал белым при загрузке */
+  background-color: var(--bg-page); /* Подставляем цвет страницы, чтобы фон не моргал при загрузке */
 }
 
 /* === ГЛОБАЛЬНЫЕ НАСТРОЙКИ PWA === */

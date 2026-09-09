@@ -229,13 +229,13 @@ const formatText = (str: string) => {
 }
 </script>
 <template>
-  <div class="flex flex-col h-[100dvh] w-full bg-slate-950 px-6 pt-12 pb-8 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+  <div class="flex flex-col h-[100dvh] w-full bg-page px-6 pt-12 pb-8 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
     
     <!-- Шапка онбординга (Скрываем полностью, если есть ошибка сети) -->
     <div v-if="!fetchError" class="mb-6 relative shrink-0">
       <div class="h-8 mb-1 flex items-center">
         <Transition name="fade">
-          <button v-if="step > 1 && !isLoading" @click="goBack" class="inline-flex items-center gap-1 text-slate-400 hover:text-white transition-colors p-1 -ml-1">
+          <button v-if="step > 1 && !isLoading" @click="goBack" class="inline-flex items-center gap-1 text-muted hover:text-primary transition-colors p-1 -ml-1">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
             <span class="text-sm font-medium">Назад</span>
           </button>
@@ -245,8 +245,8 @@ const formatText = (str: string) => {
         <!-- Анимированный заголовок ИЛИ его скелетон -->
       <!-- ДОБАВИЛИ type="transition", чтобы Vue игнорировал бесконечный animate-pulse -->
       <Transition name="fade-title" mode="out-in" type="transition">
-        <div v-if="isLoading" class="h-9 w-48 bg-slate-800 rounded-lg animate-pulse mt-1"></div>
-        <h1 v-else :key="stepTitle" class="text-3xl font-bold text-white tracking-tight leading-tight">
+        <div v-if="isLoading" class="h-9 w-48 bg-raised rounded-lg animate-pulse mt-1"></div>
+        <h1 v-else :key="stepTitle" class="text-3xl font-bold text-primary tracking-tight leading-tight">
           {{ stepTitle }}
         </h1>
       </Transition>
@@ -261,15 +261,15 @@ const formatText = (str: string) => {
         <!-- СОСТОЯНИЕ 1: ЗАГРУЗКА (Скелетоны) -->
         <template v-if="isLoading">
           <!-- Фейковый инпут -->
-          <div class="w-full h-[52px] bg-slate-900/60 border border-slate-800 rounded-2xl animate-pulse"></div>
+          <div class="w-full h-[52px] bg-surface/60 border border-line rounded-2xl animate-pulse"></div>
           
           <div class="flex flex-col gap-3 mt-1">
             <!-- Фейковые институты (5 штук) -->
-            <div v-for="i in 5" :key="i" class="flex items-center gap-4 bg-slate-900/40 border border-slate-800/50 p-4 rounded-2xl animate-pulse">
-              <div class="w-12 h-12 rounded-xl bg-slate-800/80 shrink-0"></div>
+            <div v-for="i in 5" :key="i" class="flex items-center gap-4 bg-surface/40 border border-line/50 p-4 rounded-2xl animate-pulse">
+              <div class="w-12 h-12 rounded-xl bg-raised/80 shrink-0"></div>
               <div class="flex flex-col gap-2 w-full">
-                <div class="h-3 w-1/4 bg-slate-800 rounded-md"></div>
-                <div class="h-4 w-3/4 bg-slate-700/50 rounded-md"></div>
+                <div class="h-3 w-1/4 bg-raised rounded-md"></div>
+                <div class="h-4 w-3/4 bg-raised/50 rounded-md"></div>
               </div>
             </div>
           </div>
@@ -278,13 +278,13 @@ const formatText = (str: string) => {
         <!-- СОСТОЯНИЕ 2: ОШИБКА -->
         <!-- flex-1 и justify-center отцентруют этот блок идеально посередине экрана -->
         <div v-else-if="fetchError" class="flex flex-col items-center justify-center py-12 px-4 text-center flex-1 h-full">
-          <div class="w-16 h-16 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mb-4">
+          <div class="w-16 h-16 bg-error/10 text-error rounded-full flex items-center justify-center mb-4">
             <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           </div>
-          <h3 class="text-lg font-bold text-white mb-2">Сервер недоступен</h3>
-          <p class="text-sm text-slate-400 mb-6">{{ fetchError }}</p>
+          <h3 class="text-lg font-bold text-primary mb-2">Сервер недоступен</h3>
+          <p class="text-sm text-muted mb-6">{{ fetchError }}</p>
           <!-- ИСПРАВЛЕНА КНОПКА: Теперь вызывает правильную функцию -->
-          <button @click="loadInstitutes" class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-colors active:scale-95">
+          <button @click="loadInstitutes" class="px-6 py-3 bg-accent-strong hover:bg-accent text-primary font-bold rounded-xl transition-colors active:scale-95">
             Повторить попытку
           </button>
         </div>
@@ -298,10 +298,10 @@ const formatText = (str: string) => {
               @input="searchQuery = ($event.target as HTMLInputElement).value"
               type="text" 
               placeholder="Найти свою группу" 
-              class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl py-3.5 pl-12 pr-10 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:bg-slate-900 transition-all shadow-sm"
+              class="w-full bg-surface/60 border border-line rounded-2xl py-3.5 pl-12 pr-10 text-primary placeholder-subtle focus:outline-none focus:border-accent/50 focus:bg-surface transition-all shadow-sm"
             />
-            <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-            <button v-if="searchQuery" @click="searchQuery = ''" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 rounded-full bg-slate-800/80 transition-colors">
+            <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <button v-if="searchQuery" @click="searchQuery = ''" class="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-primary p-1 rounded-full bg-raised/80 transition-colors">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
@@ -314,7 +314,7 @@ const formatText = (str: string) => {
               <Transition name="fade">
                 <div v-if="searchResults.length === 0" class="flex flex-col items-center justify-center py-10 opacity-60">
                    <span class="text-3xl mb-2">🤔</span>
-                   <span class="text-slate-400 text-sm">Группа не найдена</span>
+                   <span class="text-muted text-sm">Группа не найдена</span>
                 </div>
               </Transition>
               
@@ -322,15 +322,15 @@ const formatText = (str: string) => {
                 <button 
                   v-for="res in searchResults" :key="res.id"
                   @click="onSelectGroup(res, res.institute)"
-                  class="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-4 rounded-2xl hover:bg-slate-800/80 transition-all text-left group"
+                  class="flex items-center justify-between bg-surface/60 border border-line p-4 rounded-2xl hover:bg-raised/80 transition-all text-left group"
                 >
                   <div class="flex flex-col flex-1 min-w-0 pr-4">
-                    <span class="text-lg font-bold text-white mb-1 group-hover:text-indigo-400 transition-colors truncate">{{ res.name }}</span>
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{{ res.institute.short_name || res.institute.name }}</span>
-                    <span class="text-[11px] text-slate-500 truncate mt-0.5">{{ res.course }} Курс</span>
+                    <span class="text-lg font-bold text-primary mb-1 group-hover:text-accent transition-colors truncate">{{ res.name }}</span>
+                    <span class="text-[10px] font-bold text-muted uppercase tracking-widest truncate">{{ res.institute.short_name || res.institute.name }}</span>
+                    <span class="text-[11px] text-subtle truncate mt-0.5">{{ res.course }} Курс</span>
                   </div>
-                  <div class="px-2.5 py-1 bg-slate-800/80 border border-slate-700/50 rounded-lg shrink-0 mt-1">
-                    <span class="text-[10px] font-bold text-slate-300 uppercase">Выбрать</span>
+                  <div class="px-2.5 py-1 bg-raised/80 border border-line-muted/50 rounded-lg shrink-0 mt-1">
+                    <span class="text-[10px] font-bold text-tertiary uppercase">Выбрать</span>
                   </div>
                 </button>
               </TransitionGroup>
@@ -339,9 +339,9 @@ const formatText = (str: string) => {
                 <button 
                   v-if="remainingGroupsCount > 0"
                   @click="loadMoreGroups"
-                  class="mt-1 w-full py-4 flex items-center justify-center gap-2 bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/50 rounded-2xl text-slate-300 text-sm font-bold transition-all active:scale-95"
+                  class="mt-1 w-full py-4 flex items-center justify-center gap-2 bg-raised/40 hover:bg-raised/80 border border-line-muted/50 rounded-2xl text-tertiary text-sm font-bold transition-all active:scale-95"
                 >
-                  <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                  <svg class="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                   Загрузить еще {{ nextLoadCount }} {{ getGroupsWord(nextLoadCount) }}
                 </button>
               </Transition>
@@ -352,20 +352,20 @@ const formatText = (str: string) => {
               <button 
                 v-for="inst in institutes" :key="inst.id"
                 @click="onSelectInstitute(inst)"
-                class="flex items-center gap-4 bg-slate-900/60 border border-slate-800 p-4 rounded-2xl hover:bg-slate-800/80 transition-all text-left"
+                class="flex items-center gap-4 bg-surface/60 border border-line p-4 rounded-2xl hover:bg-raised/80 transition-all text-left"
               >
                 <!-- Иконка -->
                 <div class="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0 p-1.5">
                   <img v-if="inst.logo_url" :src="inst.logo_url" class="w-full h-full object-contain" alt="" />
-                  <svg v-else class="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" /></svg>
+                  <svg v-else class="w-6 h-6 text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" /></svg>
                 </div>
                 
                 <div class="flex flex-col flex-1 min-w-0 pr-2">
-                  <span v-if="inst.short_name" class="text-[11px] text-indigo-400 font-bold uppercase tracking-widest">{{ inst.short_name }}</span>
-                  <span class="text-sm font-semibold text-slate-200 uppercase leading-tight line-clamp-2 break-words" :class="!inst.short_name ? 'text-sm' : ''">{{ inst.name }}</span>
+                  <span v-if="inst.short_name" class="text-[11px] text-accent font-bold uppercase tracking-widest">{{ inst.short_name }}</span>
+                  <span class="text-sm font-semibold text-secondary uppercase leading-tight line-clamp-2 break-words" :class="!inst.short_name ? 'text-sm' : ''">{{ inst.name }}</span>
                 </div>
                 
-                <svg class="w-5 h-5 text-slate-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                <svg class="w-5 h-5 text-subtle shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
               </button>
             </div>
 
@@ -376,18 +376,18 @@ const formatText = (str: string) => {
       <!-- ШАГ 2: Форма обучения -->
       <div v-else-if="step === 2" class="flex flex-col gap-3">
         <!-- ... КОД ШАГА 2 БЕЗ ИЗМЕНЕНИЙ ... -->
-        <button v-for="form in availableForms" :key="form as string" @click="onSelectForm(form)" class="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-4 rounded-2xl hover:bg-slate-800/80 transition-all text-left">
-          <span class="text-base font-semibold text-slate-200">{{ formatText(form as string) }}</span>
-          <svg class="w-5 h-5 text-slate-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+        <button v-for="form in availableForms" :key="form as string" @click="onSelectForm(form)" class="flex items-center justify-between bg-surface/60 border border-line p-4 rounded-2xl hover:bg-raised/80 transition-all text-left">
+          <span class="text-base font-semibold text-secondary">{{ formatText(form as string) }}</span>
+          <svg class="w-5 h-5 text-subtle shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
       </div>
 
       <!-- ШАГ 3: Курс или программа (Магистратура) -->
       <div v-else-if="step === 3" class="flex flex-col gap-3">
         <!-- ... КОД ШАГА 3 БЕЗ ИЗМЕНЕНИЙ ... -->
-        <button v-for="course in availableCourses" :key="course as string" @click="onSelectCourse(course)" class="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-4 rounded-2xl hover:bg-slate-800/80 transition-all text-left">
-          <span class="text-sm font-semibold text-slate-200 leading-snug pr-4">{{ course }}</span>
-          <svg class="w-5 h-5 text-slate-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+        <button v-for="course in availableCourses" :key="course as string" @click="onSelectCourse(course)" class="flex items-center justify-between bg-surface/60 border border-line p-4 rounded-2xl hover:bg-raised/80 transition-all text-left">
+          <span class="text-sm font-semibold text-secondary leading-snug pr-4">{{ course }}</span>
+          <svg class="w-5 h-5 text-subtle shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
       </div>
 
@@ -400,8 +400,8 @@ const formatText = (str: string) => {
           :class="getGroupStyle(group.name)"
         >
           <!-- text-base и tracking-tight спасают от разрыва длинных имен, а break-words перенесет текст, если совсем не влезет -->
-          <span class="text-base font-bold text-white mb-1 uppercase tracking-tight break-words w-full">{{ group.name }}</span>
-          <span class="text-[10px] uppercase tracking-widest text-slate-400">Выбрать</span>
+          <span class="text-base font-bold text-primary mb-1 uppercase tracking-tight break-words w-full">{{ group.name }}</span>
+          <span class="text-[10px] uppercase tracking-widest text-muted">Выбрать</span>
         </button>
       </div>
 
