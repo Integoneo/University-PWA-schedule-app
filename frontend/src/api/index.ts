@@ -211,6 +211,42 @@ export const api = {
     }
   },
 
+  // 5. Расписание преподавателя (с кешем и X-Device-ID)
+  async getTeacherSchedule(teacherId: string | number) {
+    const cacheKey = `api_teacher_schedule_${teacherId}`
+    const cached = localStorage.getItem(cacheKey)
+
+    try {
+      const response = await fetch(`${API_URL}/teachers/${teacherId}/schedule`, {
+        headers: getHeaders()
+      })
+
+      if (response.status === 404) throw new Error('404_NOT_FOUND')
+      if (!response.ok) throw new Error('SERVER_ERROR')
+
+      const data = await response.json()
+      const newDataString = JSON.stringify(data)
+      const isUpdated = cached !== newDataString
+
+      if (isUpdated) {
+        localStorage.setItem(cacheKey, newDataString)
+      }
+
+      return {
+        ...data,
+        _meta: { status: isUpdated ? 'updated' : 'actual' }
+      }
+    } catch (error: any) {
+      if (cached && error.message !== '404_NOT_FOUND') {
+        return {
+          ...JSON.parse(cached),
+          _meta: { status: 'offline' }
+        }
+      }
+      throw error
+    }
+  },
+
   clearInstitutesCache() {
     localStorage.removeItem('api_institutes')
   }

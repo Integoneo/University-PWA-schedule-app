@@ -157,8 +157,8 @@ const onSelectGroup = (group: any) => {
 }
 
 const onSelectTeacher = (teacher: { id: number; name: string }) => {
-  console.log('[Search] Selected teacher:', teacher)
-  router.push(`/teacher/${teacher.id}`)
+  store.setViewingTeacher(teacher)
+  router.push('/lessons')
 }
 </script>
 

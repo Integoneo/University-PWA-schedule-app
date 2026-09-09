@@ -9,6 +9,7 @@ import WeekDayPicker from './schedule/WeekDayPicker.vue'
 import ScheduleBody from './schedule/ScheduleBody.vue'
 import GroupInfoSheet from './schedule/GroupInfoSheet.vue'
 import ExcelModal from './schedule/ExcelModal.vue'
+import TeacherSchedule from './TeacherSchedule.vue'
 
 // ── Константы ──────────────────────────────────────────────────────────────
 const realToday = new Date()
@@ -274,59 +275,72 @@ onUnmounted(() => {
 <template>
   <div class="flex flex-col h-full bg-page text-secondary overflow-hidden">
 
-    <ScheduleHeader
-      :groupInfo="groupInfo"
-      :isEvenWeek="isEvenWeek"
-      :viewContext="store.viewContext"
-      :isLoading="isLoading"
-      :selectedDate="selectedDate"
-      @openGroupSheet="isGroupSheetOpen = true"
-      @refresh="fetchScheduleData(true)"
-      @addToFavorites="toggleCurrentFavorite"
-      @goHome="store.resetToMainGroup()"
+    <!-- ══ РЕЖИМ ПРЕПОДАВАТЕЛЯ ═══════════════════════════════════════════════
+         TeacherSchedule монтируется/демонтируется при смене учителя (:key).
+         overlayManager, GroupInfoSheet, ExcelModal — не затрагиваются.       -->
+    <TeacherSchedule
+      v-if="store.currentViewingTeacher"
+      :key="store.currentViewingTeacher.id"
     />
 
-    <WeekDayPicker
-      :selectedDate="selectedDate"
-      :currentWeekDates="currentWeekDates"
-      :showCopyButton="currentState === 'lessons'"
-      :today="realToday"
-      @selectDate="selectDate"
-      @copy="copyDaySchedule"
-    />
+    <!-- ══ РЕЖИМ СТУДЕНТА ════════════════════════════════════════════════════ -->
+    <template v-else>
 
-    <ScheduleBody
-      :currentState="currentState"
-      :lessons="currentLessons"
-      :selectedDate="selectedDate"
-      :currentMinutes="currentMinutes"
-      :realToday="realToday"
-      :transitionName="transitionName"
-      :showSwipeGuide="overlayManager.state.activeItem?.id === 'swipe_guide'"
-      :isTouchDevice="isTouchDevice"
-      @touchstart="onTouchStart"
-      @touchend="handleTouchEnd"
-      @retry="fetchScheduleData(true)"
-      @swipeGuideDismiss="completeSwipeGuide"
-    />
+      <ScheduleHeader
+        :groupInfo="groupInfo"
+        :isEvenWeek="isEvenWeek"
+        :viewContext="store.viewContext"
+        :isLoading="isLoading"
+        :selectedDate="selectedDate"
+        @openGroupSheet="isGroupSheetOpen = true"
+        @refresh="fetchScheduleData(true)"
+        @addToFavorites="toggleCurrentFavorite"
+        @goHome="store.resetToMainGroup()"
+      />
 
-    <GroupInfoSheet
-      :isOpen="isGroupSheetOpen"
-      :groupInfo="groupInfo"
-      :formattedSemesterDates="formattedSemesterDates"
-      :excelUrl="originalExcelUrl"
-      :viewContext="store.viewContext"
-      :isFavorite="store.isFavorite(groupInfo.group_id)"
-      @close="isGroupSheetOpen = false"
-      @toggleFavorite="toggleCurrentFavorite"
-      @openExcel="isExcelModalOpen = true"
-    />
+      <WeekDayPicker
+        :selectedDate="selectedDate"
+        :currentWeekDates="currentWeekDates"
+        :showCopyButton="currentState === 'lessons'"
+        :today="realToday"
+        @selectDate="selectDate"
+        @copy="copyDaySchedule"
+      />
 
-    <ExcelModal
-      :isOpen="isExcelModalOpen"
-      :url="originalExcelUrl"
-      @close="isExcelModalOpen = false"
-    />
+      <ScheduleBody
+        :currentState="currentState"
+        :lessons="currentLessons"
+        :selectedDate="selectedDate"
+        :currentMinutes="currentMinutes"
+        :realToday="realToday"
+        :transitionName="transitionName"
+        :showSwipeGuide="overlayManager.state.activeItem?.id === 'swipe_guide'"
+        :isTouchDevice="isTouchDevice"
+        @touchstart="onTouchStart"
+        @touchend="handleTouchEnd"
+        @retry="fetchScheduleData(true)"
+        @swipeGuideDismiss="completeSwipeGuide"
+      />
+
+      <GroupInfoSheet
+        :isOpen="isGroupSheetOpen"
+        :groupInfo="groupInfo"
+        :formattedSemesterDates="formattedSemesterDates"
+        :excelUrl="originalExcelUrl"
+        :viewContext="store.viewContext"
+        :isFavorite="store.isFavorite(groupInfo.group_id)"
+        @close="isGroupSheetOpen = false"
+        @toggleFavorite="toggleCurrentFavorite"
+        @openExcel="isExcelModalOpen = true"
+      />
+
+      <ExcelModal
+        :isOpen="isExcelModalOpen"
+        :url="originalExcelUrl"
+        @close="isExcelModalOpen = false"
+      />
+
+    </template>
 
   </div>
 </template>

@@ -15,6 +15,9 @@ export const store = reactive({
 
   // 🔄 Контекст текущего просмотра: 'main' | 'favorite' | 'guest'
   viewContext: 'main' as 'main' | 'favorite' | 'guest',
+
+  // 👨‍🏫 Преподаватель, расписание которого сейчас открыто (null = студенческий режим)
+  currentViewingTeacher: null as { id: number; name: string } | null,
   
   // ⭐ Массив избранных групп
   favorites: savedFavorites ? JSON.parse(savedFavorites) : [] as any[],
@@ -43,6 +46,16 @@ export const store = reactive({
   resetToMainGroup() {
     this.currentViewingGroup = this.groupInfo
     this.viewContext = 'main'
+  },
+
+  // Открыть расписание преподавателя (переключает Schedule.vue в режим препода)
+  setViewingTeacher(teacher: { id: number; name: string }) {
+    this.currentViewingTeacher = teacher
+  },
+
+  // Закрыть расписание преподавателя, вернуться в студенческий режим
+  clearViewingTeacher() {
+    this.currentViewingTeacher = null
   },
 
   // Сбросить основную группу (для выхода)

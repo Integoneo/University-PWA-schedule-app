@@ -7,8 +7,6 @@ import Settings from '../components/Settings.vue'
 import Profile from '../components/Profile.vue'
 import Search from '../components/Search.vue' 
 import Exams from '../components/Exams.vue'
-import TeacherSchedule from '../components/TeacherSchedule.vue'
-
 const routes = [
   { path: '/', redirect: '/lessons' },
   { path: '/welcome', name: 'Welcome', component: Welcome, meta: { hideNavbar: true } },
@@ -18,7 +16,6 @@ const routes = [
   { path: '/search', name: 'Search', component: Search },
   { path: '/settings', name: 'Settings', component: Settings },
   { path: '/profile', name: 'Profile', component: Profile, meta: { hideNavbar: true } },
-  { path: '/teacher/:id', name: 'TeacherSchedule', component: TeacherSchedule, meta: { hideNavbar: true } },
 ]
 
 const router = createRouter({
