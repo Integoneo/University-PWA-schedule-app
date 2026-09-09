@@ -191,6 +191,26 @@ export const api = {
     }
   },
 
+  // 4. Список преподавателей (с кешем и X-Device-ID)
+  async getTeachers(): Promise<{ id: number; name: string }[]> {
+    const cached = localStorage.getItem('api_teachers')
+    try {
+      const response = await fetch(`${API_URL}/teachers`, {
+        headers: getHeaders()
+      })
+      if (!response.ok) throw new Error('Ошибка загрузки преподавателей')
+      const data = await response.json()
+      const newDataString = JSON.stringify(data)
+      if (cached !== newDataString) {
+        localStorage.setItem('api_teachers', newDataString)
+      }
+      return data as { id: number; name: string }[]
+    } catch (error) {
+      if (cached) return JSON.parse(cached) as { id: number; name: string }[]
+      throw error
+    }
+  },
+
   clearInstitutesCache() {
     localStorage.removeItem('api_institutes')
   }
