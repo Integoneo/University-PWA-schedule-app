@@ -1,15 +1,10 @@
 <script setup lang="ts">
-/**
- * Changelog.vue — полная страница истории обновлений.
- * Маршрут: /changelog  |  hideNavbar: true
- */
 import { useRouter } from 'vue-router'
 import { CURRENT_VERSION, changelogHistory } from '../config/changelog'
 import type { ChangelogEntry } from '../config/changelog'
 
 const router = useRouter()
 
-// Сортируем от новых к старым (на случай если в массиве порядок не соблюдён)
 const sortedHistory: ChangelogEntry[] = [...changelogHistory].sort((a, b) => {
   const pa = a.version.split('.').map(Number)
   const pb = b.version.split('.').map(Number)
@@ -62,8 +57,8 @@ const formatDate = (iso: string) => {
       </div>
     </div>
 
-    <!-- Список версий -->
-    <div class="px-4 flex flex-col gap-4">
+    <!-- Записи -->
+    <div class="px-4 flex flex-col gap-5">
 
       <!-- Пустой список -->
       <div
@@ -75,55 +70,63 @@ const formatDate = (iso: string) => {
         <span class="text-subtle text-xs mt-1">Здесь появятся записи при следующих релизах</span>
       </div>
 
-      <!-- Записи -->
+      <!-- Карточка версии -->
       <div
         v-for="entry in sortedHistory"
         :key="entry.version"
-        class="bg-surface/60 border border-line rounded-3xl p-5 flex flex-col gap-4"
+        class="bg-surface/60 border border-line rounded-3xl p-5 flex flex-col gap-5"
       >
-        <!-- Заголовок записи -->
+        <!-- Заголовок -->
         <div class="flex items-start justify-between gap-2">
-          <div class="flex flex-col gap-1">
+          <div class="flex flex-col gap-1.5">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-lg font-black text-primary">v{{ entry.version }}</span>
+              <span class="text-xl font-black text-primary">v{{ entry.version }}</span>
               <span
                 class="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border"
                 :class="TYPE_COLORS[entry.type]"
-              >
-                {{ TYPE_LABELS[entry.type] }}
-              </span>
+              >{{ TYPE_LABELS[entry.type] }}</span>
             </div>
             <span class="text-xs text-subtle">{{ formatDate(entry.date) }}</span>
           </div>
         </div>
 
         <!-- Новые функции -->
-        <div v-if="entry.features.length > 0" class="flex flex-col gap-2">
-          <div class="flex items-center gap-2 mb-0.5">
-            <span class="text-[11px] font-bold text-subtle uppercase tracking-widest">✨ Новые функции</span>
-          </div>
+        <div v-if="entry.features.length > 0" class="flex flex-col gap-3">
+          <span class="text-[11px] font-bold text-subtle uppercase tracking-widest">✨ Новые функции</span>
           <div
             v-for="(feat, i) in entry.features"
             :key="'f' + i"
-            class="flex items-start gap-3 bg-accent/5 border border-accent/10 rounded-xl px-3 py-2.5"
+            class="flex flex-col gap-2 bg-accent/5 border border-accent/10 rounded-2xl px-4 py-3.5"
           >
-            <span class="text-accent text-xs mt-0.5 shrink-0 font-bold">→</span>
-            <span class="text-sm text-secondary leading-snug">{{ feat }}</span>
+            <div class="flex items-start gap-2.5">
+              <span class="text-accent text-sm mt-0.5 shrink-0 font-bold">→</span>
+              <span class="text-sm font-semibold text-secondary leading-snug">{{ feat.name }}</span>
+            </div>
+            <p
+              v-if="feat.description"
+              class="text-xs text-muted leading-relaxed pl-5 changelog-html"
+              v-html="feat.description"
+            ></p>
           </div>
         </div>
 
         <!-- Исправления -->
-        <div v-if="entry.fixes.length > 0" class="flex flex-col gap-2">
-          <div class="flex items-center gap-2 mb-0.5">
-            <span class="text-[11px] font-bold text-subtle uppercase tracking-widest">🔧 Исправления</span>
-          </div>
+        <div v-if="entry.fixes.length > 0" class="flex flex-col gap-3">
+          <span class="text-[11px] font-bold text-subtle uppercase tracking-widest">🔧 Исправления</span>
           <div
             v-for="(fix, i) in entry.fixes"
             :key="'fx' + i"
-            class="flex items-start gap-3 bg-success/5 border border-success/10 rounded-xl px-3 py-2.5"
+            class="flex flex-col gap-2 bg-success/5 border border-success/10 rounded-2xl px-4 py-3.5"
           >
-            <span class="text-success text-xs mt-0.5 shrink-0 font-bold">✓</span>
-            <span class="text-sm text-secondary leading-snug">{{ fix }}</span>
+            <div class="flex items-start gap-2.5">
+              <span class="text-success text-sm mt-0.5 shrink-0 font-bold">✓</span>
+              <span class="text-sm font-semibold text-secondary leading-snug">{{ fix.name }}</span>
+            </div>
+            <p
+              v-if="fix.description"
+              class="text-xs text-muted leading-relaxed pl-5 changelog-html"
+              v-html="fix.description"
+            ></p>
           </div>
         </div>
 
@@ -133,3 +136,22 @@ const formatDate = (iso: string) => {
 
   </div>
 </template>
+
+<style scoped>
+:deep(.changelog-html a) {
+  color: var(--accent);
+  text-decoration: underline;
+  font-weight: 600;
+}
+:deep(.changelog-html a:hover) {
+  opacity: 0.8;
+}
+:deep(.changelog-html b),
+:deep(.changelog-html strong) {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+:deep(.changelog-html em) {
+  font-style: italic;
+}
+</style>

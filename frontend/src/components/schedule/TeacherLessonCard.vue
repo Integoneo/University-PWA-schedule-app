@@ -91,20 +91,20 @@ const formatPlace = (place: string) => {
         <!-- Правая колонка: инфо -->
         <div class="flex-1 min-w-0">
           <!-- Тип пары -->
-          <div v-if="cl.type_of_lesson" class="mb-1">
+          <div class="mb-1">
             <span
               class="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded border"
               :class="getBadgeColor(cl.type_of_lesson)"
-            >{{ cl.type_of_lesson }}</span>
+            >{{ cl.type_of_lesson || 'Не указано' }}</span>
           </div>
           <!-- Название -->
           <p class="text-xs font-semibold text-secondary leading-snug break-words">{{ cl.lesson_name }}</p>
           <!-- Аудитория -->
-          <div v-if="cl.classroom" class="flex items-center gap-1 mt-1 text-[11px] text-muted">
+          <div class="flex items-center gap-1 mt-1 text-[11px] text-muted">
             <svg class="w-3 h-3 opacity-60 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" />
             </svg>
-            <span class="font-medium text-tertiary">{{ cl.classroom }}</span>
+            <span class="font-medium text-tertiary">{{ cl.classroom || 'Не указано' }}</span>
           </div>
           <!-- Группы -->
           <div v-if="cl.groups && cl.groups.length > 0" class="flex items-start gap-1 mt-1 text-[11px] text-muted">
@@ -152,13 +152,12 @@ const formatPlace = (place: string) => {
     <div class="flex-1 pl-4 flex flex-col justify-center min-w-0">
 
       <!-- ВЕРХНИЙ РЯД (тип пары + статус) -->
-      <div v-if="lesson.type_of_lesson || ['soon', 'now'].includes(state)" class="flex items-center mb-2">
+      <div class="flex items-center mb-2">
         <span
-          v-if="lesson.type_of_lesson"
           class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md border"
           :class="getBadgeColor(lesson.type_of_lesson)"
         >
-          {{ lesson.type_of_lesson }}
+          {{ lesson.type_of_lesson || 'Не указано' }}
         </span>
 
         <div v-if="state === 'soon'" class="ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning/10 border border-warning/20">
@@ -181,15 +180,15 @@ const formatPlace = (place: string) => {
       <h3 class="text-sm font-semibold leading-snug text-secondary break-words whitespace-normal">{{ lesson.lesson_name }}</h3>
 
       <!-- НИЖНИЙ РЯД (место + группы) -->
-      <div v-if="lesson.classroom || (lesson.groups && lesson.groups.length > 0)" class="mt-3 flex flex-col gap-2.5">
+      <div class="mt-3 flex flex-col gap-2.5">
 
         <!-- Аудитория -->
-        <div v-if="lesson.classroom" class="flex items-center text-xs text-muted">
+        <div class="flex items-center text-xs text-muted">
           <div class="flex items-center shrink-0">
             <svg class="w-3.5 h-3.5 mr-1.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" />
             </svg>
-            <span class="font-medium text-tertiary">{{ lesson.classroom }}</span>
+            <span class="font-medium text-tertiary">{{ lesson.classroom || 'Не указано' }}</span>
             <span class="mx-3 opacity-40">•</span>
           </div>
           <div class="flex flex-col text-[10px] leading-[1.35]">

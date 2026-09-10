@@ -72,8 +72,8 @@ class TeacherLessonPWA(BaseModel):
     day_of_week: int
     is_even_week: bool
     lesson_name: str
-    type_of_lesson: str
-    classroom: str
+    type_of_lesson: Optional[str]
+    classroom: Optional[str]
     educational_place: str
     start_time: time
     end_time: time

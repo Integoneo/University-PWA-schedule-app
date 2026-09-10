@@ -44,18 +44,16 @@ export function useChangelogDetector() {
   function check() {
     const lastSeen = localStorage.getItem('last_seen_version')
 
-    // Новый пользователь или после сброса кэша — просто фиксируем версию
-    if (!lastSeen) {
-      localStorage.setItem('last_seen_version', CURRENT_VERSION)
-      return
-    }
-
     // Версия актуальна
-    if (compareSemver(lastSeen, CURRENT_VERSION) >= 0) return
+    if (lastSeen && compareSemver(lastSeen, CURRENT_VERSION) >= 0) return
 
-    // Собираем все записи новее last_seen, сортируем от новых к старым
+    // Новый пользователь / сброс кэша → считаем что видел '0.0.0'.
+    // Это гарантирует показ changelog даже для первой версии приложения.
+    const effectiveLastSeen = lastSeen || '0.0.0'
+
+    // Собираем все записи новее effectiveLastSeen, сортируем от новых к старым
     const newEntries = changelogHistory
-      .filter(entry => compareSemver(entry.version, lastSeen) > 0)
+      .filter(entry => compareSemver(entry.version, effectiveLastSeen) > 0)
       .sort((a, b) => compareSemver(b.version, a.version))
 
     // Сразу обновляем версию — повторного показа не будет даже при крэше

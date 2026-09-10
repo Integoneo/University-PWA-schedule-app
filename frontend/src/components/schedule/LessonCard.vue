@@ -60,13 +60,12 @@ const formatPlace = (place: string) => {
     <div class="flex-1 pl-4 flex flex-col justify-center min-w-0">
 
       <!-- ВЕРХНИЙ РЯД (Бейджи) -->
-      <div v-if="lesson.type_of_lesson || ['soon', 'now'].includes(state)" class="flex items-center mb-2">
+      <div class="flex items-center mb-2">
         <span
-          v-if="lesson.type_of_lesson"
           class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md border"
           :class="getBadgeColor(lesson.type_of_lesson)"
         >
-          {{ lesson.type_of_lesson }}
+          {{ lesson.type_of_lesson || 'Не указано' }}
         </span>
 
         <div v-if="state === 'soon'" class="ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning/10 border border-warning/20">
@@ -89,13 +88,13 @@ const formatPlace = (place: string) => {
       <h3 class="text-sm font-semibold leading-snug text-secondary break-words whitespace-normal">{{ lesson.lesson_name }}</h3>
 
       <!-- НИЖНИЙ РЯД (Место и преподы) -->
-      <div v-if="lesson.classroom || (lesson.teachers && lesson.teachers.length > 0)" class="mt-3 flex flex-col gap-3">
-        <div v-if="lesson.classroom" class="flex items-center text-xs text-muted mt-0.5">
+      <div class="mt-3 flex flex-col gap-3">
+        <div class="flex items-center text-xs text-muted mt-0.5">
           <div class="flex items-center shrink-0">
             <svg class="w-3.5 h-3.5 mr-1.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-3 4H2v6h20v-6h-9z" />
             </svg>
-            <span class="font-medium text-tertiary">{{ lesson.classroom }}</span>
+            <span class="font-medium text-tertiary">{{ lesson.classroom || 'Не указано' }}</span>
             <span class="mx-3 opacity-40">•</span>
           </div>
           <div class="flex flex-col text-[10px] leading-[1.35]">
