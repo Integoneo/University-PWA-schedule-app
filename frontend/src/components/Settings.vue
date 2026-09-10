@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import BottomSheet from './BottomSheet.vue'
 import { store } from '../store'
+import { CURRENT_VERSION } from '../config/changelog'
 
 const router = useRouter()
 
@@ -138,7 +139,23 @@ const copyPhoneOnly = async () => {
 
         <div class="h-px w-full bg-line/50 my-1"></div>
 
-        <!-- 4. О приложении -->
+        <!-- 4. История изменений -->
+        <button @click="router.push('/changelog')" class="flex items-center justify-between p-4 hover:bg-raised/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
+          <div class="flex items-center gap-4">
+            <div class="p-2.5 rounded-xl bg-accent/10 text-accent border border-accent/20">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+            </div>
+            <div class="flex flex-col">
+              <span class="text-base font-semibold text-secondary">История изменений</span>
+              <span class="text-xs text-subtle">v{{ CURRENT_VERSION }}</span>
+            </div>
+          </div>
+          <svg class="w-5 h-5 text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+        </button>
+
+        <div class="h-px w-full bg-line/50 my-1"></div>
+
+        <!-- 5. О приложении -->
         <button @click="isAboutSheetOpen = true" class="flex items-center justify-between p-4 hover:bg-raised/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
           <div class="flex items-center gap-4">
             <div class="p-2.5 rounded-xl bg-raised text-muted border border-line-muted/50">
@@ -240,7 +257,7 @@ const copyPhoneOnly = async () => {
         <h2 class="text-2xl font-bold text-primary mb-2">О приложении</h2>
       </template>
       
-      <span class="text-accent font-bold text-sm tracking-widest uppercase mb-5 block mt-2">Версия 1.0.0 Alpha</span>
+      <span class="text-accent font-bold text-sm tracking-widest uppercase mb-5 block mt-2">Версия {{ CURRENT_VERSION }} </span>
       
       <div class="flex flex-col gap-4 mb-6">
         <p class="text-muted text-sm leading-relaxed">

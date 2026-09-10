@@ -4,8 +4,10 @@ import { store } from './store'
 import { api } from './api'
 import { onMounted } from 'vue'
 import Modal from './components/Modal.vue'
+import ChangelogModal from './components/ChangelogModal.vue'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { overlayManager } from './composables/useOverlayManager'
+import { useChangelogDetector } from './composables/useChangelogDetector'
 
 
 const { needRefresh, updateServiceWorker } = useRegisterSW({
@@ -45,7 +47,12 @@ const closeUpdateBanner = () => {
 const route = useRoute()
 const router = useRouter()
 
+const { check: checkChangelog } = useChangelogDetector()
+
 onMounted(() => {
+  // 0. Проверяем новые версии и при необходимости ставим в очередь модалку
+  checkChangelog()
+
   // 1. При старте пробуем отправить статистику установки (если это standalone/PWA)
   api.syncInstallStats()
 
@@ -184,6 +191,9 @@ const tabs = [
     </Transition>
       <!-- УНИВЕРСАЛЬНАЯ МОДАЛКА -->
       <Modal />
+
+      <!-- МОДАЛКА CHANGELOG (управляется через overlayManager) -->
+      <ChangelogModal v-if="overlayManager.state.activeItem?.id === 'changelog'" />
     </Teleport>
   </main>
 </template>
