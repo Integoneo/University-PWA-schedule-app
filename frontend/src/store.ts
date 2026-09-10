@@ -64,6 +64,16 @@ function _clearUserData(): void {
     }
   }
 
+  // Структурная валидация user_favorite_teachers
+  const rawFavTeachers = localStorage.getItem('user_favorite_teachers')
+  if (rawFavTeachers) {
+    try {
+      if (!Array.isArray(JSON.parse(rawFavTeachers))) throw new Error('invalid_fav_teachers_structure')
+    } catch {
+      localStorage.removeItem('user_favorite_teachers')
+    }
+  }
+
   // Всё валидно — фиксируем версию (для старых пользователей это первая запись)
   if (!storedVersion) {
     localStorage.setItem('app_data_version', DATA_VERSION)
@@ -74,6 +84,7 @@ function _clearUserData(): void {
 
 const savedGroup = localStorage.getItem('user_group')
 const savedFavorites = localStorage.getItem('user_favorites')
+const savedFavoriteTeachers = localStorage.getItem('user_favorite_teachers')
 
 // После предохранителя гарантированно валидный JSON или null
 const parsedGroup = savedGroup ? JSON.parse(savedGroup) : null
@@ -94,6 +105,11 @@ export const store = reactive({
   
   // ⭐ Массив избранных групп
   favorites: savedFavorites ? JSON.parse(savedFavorites) : [] as any[],
+
+  // ⭐ Массив избранных преподавателей
+  favoriteTeachers: savedFavoriteTeachers
+    ? JSON.parse(savedFavoriteTeachers) as { id: number; name: string }[]
+    : [] as { id: number; name: string }[],
   
   // Установить основную группу
   setGroup(groupData: any) {
@@ -161,6 +177,22 @@ export const store = reactive({
   // Проверка, в избранном ли группа
   isFavorite(groupId: string | number) {
     return this.favorites.some((g: any) => g.group_id === groupId)
+  },
+
+  // Добавить или удалить преподавателя из избранного
+  toggleFavoriteTeacher(teacher: { id: number; name: string }) {
+    const index = this.favoriteTeachers.findIndex(t => t.id === teacher.id)
+    if (index === -1) {
+      this.favoriteTeachers.push(teacher)
+    } else {
+      this.favoriteTeachers.splice(index, 1)
+    }
+    localStorage.setItem('user_favorite_teachers', JSON.stringify(this.favoriteTeachers))
+  },
+
+  // Проверка, в избранном ли преподаватель
+  isFavoriteTeacher(teacherId: number) {
+    return this.favoriteTeachers.some(t => t.id === teacherId)
   },
 
   // === СИСТЕМА УВЕДОМЛЕНИЙ ===

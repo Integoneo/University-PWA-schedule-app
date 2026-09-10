@@ -278,7 +278,9 @@ const onSelectTeacher = (teacher: { id: number; name: string }) => {
                     <span class="text-[10px] font-bold text-subtle uppercase tracking-widest truncate">{{ fav.institute_short_name || fav.institute_full_name }}</span>
                   </div>
                   <div class="px-2.5 py-1.5 bg-accent/10 border border-accent/20 text-accent rounded-xl shrink-0 group-hover:bg-accent/20 transition-colors">
-                    <span class="text-[10px] font-bold uppercase tracking-widest">К просмотру</span>
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
                   </div>
                 </div>
               </div>
@@ -304,6 +306,11 @@ const onSelectTeacher = (teacher: { id: number; name: string }) => {
                     <span class="text-[10px] font-bold text-muted uppercase tracking-widest truncate">{{ item.institute.short_name || item.institute.name }}</span>
                     <span class="text-[11px] text-subtle mt-0.5">{{ item.course }} курс • {{ normalizeStudyForm(item.education_form) }}</span>
                   </div>
+                  <div class="px-2.5 py-1.5 bg-accent/10 border border-accent/20 text-accent rounded-xl shrink-0 group-hover:bg-accent/20 transition-colors">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
                 </div>
               </template>
             </SearchResultList>
@@ -315,15 +322,34 @@ const onSelectTeacher = (teacher: { id: number; name: string }) => {
         <div class="w-1/2 h-full overflow-y-auto px-4 pb-28 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <div class="flex flex-col gap-3 pt-1">
 
-            <!-- Пустой запрос → заглушка избранного -->
+            <!-- Пустой запрос → избранные преподаватели -->
             <template v-if="!searchQuery">
               <span class="text-xs font-bold text-subtle uppercase tracking-widest ml-1 mb-1 block">⭐ Избранные преподаватели</span>
 
-              <div class="flex flex-col items-center justify-center py-16 bg-surface/20 border border-surface rounded-3xl opacity-50">
+              <div v-if="store.favoriteTeachers.length === 0" class="flex flex-col items-center justify-center py-16 bg-surface/20 border border-surface rounded-3xl opacity-50">
                 <svg class="w-8 h-8 text-subtle mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
                 <span class="text-xs text-muted font-medium">Избранные преподаватели появятся здесь</span>
+              </div>
+
+              <div v-else class="flex flex-col gap-3">
+                <div
+                  v-for="teacher in store.favoriteTeachers"
+                  :key="teacher.id"
+                  @click="onSelectTeacher(teacher)"
+                  class="flex items-center justify-between bg-surface/60 border border-line p-4 rounded-2xl hover:bg-raised/50 transition-all text-left group active:scale-[0.99] cursor-pointer"
+                >
+                  <div class="flex flex-col flex-1 min-w-0 pr-4">
+                    <span class="text-lg font-bold text-primary mb-0.5 group-hover:text-accent transition-colors truncate">{{ teacher.name }}</span>
+                    <span class="text-[10px] font-bold text-subtle uppercase tracking-widest">⭐ Избранный</span>
+                  </div>
+                  <div class="px-2.5 py-1.5 bg-accent/10 border border-accent/20 text-accent rounded-xl shrink-0 group-hover:bg-accent/20 transition-colors">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
             </template>
 

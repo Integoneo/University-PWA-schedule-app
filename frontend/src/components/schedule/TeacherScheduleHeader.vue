@@ -14,11 +14,13 @@ defineProps<{
   isEvenWeek: boolean
   isLoading: boolean
   selectedDate: Date
+  isFavorite: boolean
 }>()
 
 defineEmits<{
   refresh: []
   goHome: []
+  toggleFavorite: []
 }>()
 </script>
 
@@ -40,9 +42,9 @@ defineEmits<{
 
       <!-- Правая часть: 👁️ бейдж + чётность + обновление -->
       <div class="flex items-center gap-2">
-        <!-- Бейдж режима просмотра (всегда «глаз» для препода) -->
+        <!-- Бейдж: ⭐ если избранный, 👁️ если нет -->
         <div class="flex items-center justify-center w-6 h-6 rounded-md bg-surface/50 border border-line text-xs shrink-0 shadow-sm">
-          👁️
+          {{ isFavorite ? '⭐' : '👁️' }}
         </div>
 
         <div
@@ -77,17 +79,47 @@ defineEmits<{
         {{ monthNames[selectedDate.getMonth()] }}
       </h2>
 
-      <!-- Кнопка «Домой» — всегда видна в режиме преподавателя -->
-      <button
-        @click="$emit('goHome')"
-        class="flex items-center gap-1.5 px-3 py-1.5 mb-1 rounded-xl bg-accent/10 hover:bg-accent/20 border border-accent/20 text-accent active:scale-95 transition-all shadow-sm whitespace-nowrap"
-      >
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-        </svg>
-        <span class="text-[10px] font-bold uppercase tracking-widest mt-0.5">Домой</span>
-      </button>
+      <TransitionGroup name="action-btns" tag="div" class="flex items-center justify-end gap-2 mb-1 relative">
+        <!-- Кнопка «Добавить в избранное» — только если ещё не в избранном -->
+        <button
+          key="add"
+          v-if="!isFavorite"
+          @click="$emit('toggleFavorite')"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-warning/10 hover:bg-warning/20 border border-warning/20 text-warning active:scale-95 transition-all shadow-sm whitespace-nowrap"
+        >
+          <span class="text-[10px] leading-none">⭐</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest mt-0.5">Добавить</span>
+        </button>
+
+        <!-- Кнопка «Домой» — всегда видна -->
+        <button
+          key="home"
+          @click="$emit('goHome')"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent/10 hover:bg-accent/20 border border-accent/20 text-accent active:scale-95 transition-all shadow-sm whitespace-nowrap"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+          <span class="text-[10px] font-bold uppercase tracking-widest mt-0.5">Домой</span>
+        </button>
+      </TransitionGroup>
     </div>
 
   </div>
 </template>
+
+<style scoped>
+.action-btns-move,
+.action-btns-enter-active,
+.action-btns-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.action-btns-enter-from,
+.action-btns-leave-to {
+  opacity: 0;
+  transform: scale(0.9) translateX(10px);
+}
+.action-btns-leave-active {
+  position: absolute;
+}
+</style>

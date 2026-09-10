@@ -11,6 +11,7 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { store } from '../store'
+
 import { useTeacherScheduleData } from '../composables/schedule/useTeacherScheduleData'
 import { useWeekNavigation } from '../composables/schedule/useWeekNavigation'
 import { groupLessonsWithOverlaps, computeGaps } from '../composables/schedule/useTeacherMath'
@@ -59,6 +60,18 @@ const currentLessons = computed(() => {
 const lessonGroups = computed(() => groupLessonsWithOverlaps(currentLessons.value))
 const gaps         = computed(() => computeGaps(lessonGroups.value))
 
+// ── Избранное ────────────────────────────────────────────────────────────
+const isFavorite = computed(() => store.isFavoriteTeacher(teacherId))
+
+const toggleFavorite = () => {
+  store.toggleFavoriteTeacher({ id: teacherId, name: teacherName })
+  if (store.isFavoriteTeacher(teacherId)) {
+    store.addToast('Преподаватель добавлен в избранное', 'success')
+  } else {
+    store.addToast('Преподаватель удалён из избранного', 'info')
+  }
+}
+
 // ── Состояние экрана ─────────────────────────────────────────────────────
 const currentState = computed(() => {
   if (isLoading.value) return 'loading'
@@ -88,13 +101,15 @@ onUnmounted(() => {
 
 <template>
   <!-- Нет собственной оболочки h-full: Schedule.vue уже предоставляет flex-col h-full -->
-  <TeacherScheduleHeader
+    <TeacherScheduleHeader
     :teacherName="teacherName"
     :isEvenWeek="isEvenWeek"
     :isLoading="isLoading"
     :selectedDate="selectedDate"
+    :isFavorite="isFavorite"
     @refresh="fetchScheduleData(true)"
     @goHome="store.clearViewingTeacher()"
+    @toggleFavorite="toggleFavorite"
   />
 
   <WeekDayPicker

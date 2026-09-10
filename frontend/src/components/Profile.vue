@@ -13,6 +13,11 @@ const removeFavorite = (group: any) => {
   store.addToast(`Удалено из избранного`, 'info')
 }
 
+const removeFavoriteTeacher = (teacher: { id: number; name: string }) => {
+  store.toggleFavoriteTeacher(teacher)
+  store.addToast('Удалено из избранного', 'info')
+}
+
 // Вызов ГЛОБАЛЬНОЙ модалки для Сброса группы
 const promptResetGroup = () => {
   store.showModal({
@@ -90,6 +95,43 @@ const promptClearCache = () => {
             <div class="flex items-center gap-2 shrink-0">
               <button @click="removeFavorite(fav)" class="p-1.5 bg-error/10 text-error border border-error/20 rounded-lg active:scale-95 transition-transform"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- БЛОК: ИЗБРАННЫЕ ПРЕПОДАВАТЕЛИ -->
+      <div class="bg-surface/60 border border-line rounded-3xl p-5 flex flex-col gap-4">
+        <span class="text-xs font-bold text-subtle uppercase tracking-widest ml-1">Избранные преподаватели</span>
+
+        <div v-if="store.favoriteTeachers.length === 0" class="flex flex-col items-center justify-center py-6 opacity-50">
+          <svg class="w-8 h-8 text-subtle mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+          <span class="text-xs text-muted font-medium">Нет сохранённых преподавателей</span>
+        </div>
+
+        <div v-else class="flex flex-col gap-3">
+          <div
+            v-for="teacher in store.favoriteTeachers"
+            :key="teacher.id"
+            class="flex items-center justify-between bg-page/50 p-3 rounded-2xl border border-line/50"
+          >
+            <div class="flex items-center gap-3 min-w-0 pr-2">
+              <div class="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 text-accent flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <span class="text-base font-bold text-primary truncate">{{ teacher.name }}</span>
+            </div>
+            <button
+              @click="removeFavoriteTeacher(teacher)"
+              class="p-1.5 bg-error/10 text-error border border-error/20 rounded-lg active:scale-95 transition-transform shrink-0"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
