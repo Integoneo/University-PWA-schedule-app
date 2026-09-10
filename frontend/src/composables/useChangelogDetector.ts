@@ -3,9 +3,11 @@
  *
  * Алгоритм:
  *   1. Читает last_seen_version из localStorage
- *   2. Новый пользователь (нет ключа) → пишем CURRENT_VERSION, ничего не показываем
- *   3. Версия отстаёт → собираем новые записи, ограничиваем до 3, пушим в overlayManager
- *   4. Сразу обновляем last_seen_version → повторного показа не будет
+ *   2. ИСКЛЮЧЕНИЕ v1.0.0: первый релиз с changelog — показываем всем без исключения.
+ *      После показа сразу пишем last_seen_version = '1.0.0', поэтому второго раза нет.
+ *   3. Новый пользователь (нет ключа) → пишем CURRENT_VERSION, ничего не показываем
+ *   4. Версия отстаёт → собираем новые записи, ограничиваем до 3, пушим в overlayManager
+ *   5. Сразу обновляем last_seen_version → повторного показа не будет
  */
 
 import { CURRENT_VERSION, changelogHistory } from '../config/changelog'
@@ -42,18 +44,55 @@ export function useChangelogDetector() {
    * Сайд-эффект: пишет/обновляет last_seen_version, ставит задачу в overlayManager.
    */
   function check() {
+    // ──────────────────────────────────────────────────────────────────────────
+    // ИСКЛЮЧЕНИЕ v1.0.0 — идёт ПЕРВЫМ, до любых других проверок.
+    //
+    // Зачем отдельный ключ changelog_v1_shown:
+    //   Старый код (до фикса) мог записать last_seen_version = '1.0.0' сразу
+    //   при старте, не показав changelog. Если бы мы полагались только на
+    //   last_seen_version, обычная проверка ниже вернулась бы раньше и
+    //   changelog так и не показался бы.
+    //   Отдельный ключ решает это навсегда.
+    //
+    // Когда выйдет v1.1.0 — CURRENT_VERSION !== '1.0.0' и блок не сработает.
+    // ──────────────────────────────────────────────────────────────────────────
+    if (CURRENT_VERSION === '1.0.0') {
+      if (!localStorage.getItem('changelog_v1_shown')) {
+        // Фиксируем немедленно — повторного показа не будет
+        localStorage.setItem('changelog_v1_shown', '1')
+        localStorage.setItem('last_seen_version', CURRENT_VERSION)
+
+        const entries = changelogHistory.filter(e => e.version === '1.0.0')
+        if (entries.length > 0) {
+          overlayManager.enqueue({
+            id: 'changelog',
+            type: 'modal',
+            scope: 'global',
+            delayBefore: 4500,
+            delayAfter: 500,
+            payload: { entries } as ChangelogPayload,
+          })
+        }
+      }
+      return
+    }
+
+    // ── Обычный флоу для v1.1.0+ ─────────────────────────────────────────────
+
     const lastSeen = localStorage.getItem('last_seen_version')
 
-    // Версия актуальна
+    // Версия уже актуальна — ничего не делаем
     if (lastSeen && compareSemver(lastSeen, CURRENT_VERSION) >= 0) return
 
-    // Новый пользователь / сброс кэша → считаем что видел '0.0.0'.
-    // Это гарантирует показ changelog даже для первой версии приложения.
-    const effectiveLastSeen = lastSeen || '0.0.0'
+    // Новый пользователь (нет ключа) → просто фиксируем версию, ничего не показываем
+    if (!lastSeen) {
+      localStorage.setItem('last_seen_version', CURRENT_VERSION)
+      return
+    }
 
-    // Собираем все записи новее effectiveLastSeen, сортируем от новых к старым
+    // Существующий пользователь с устаревшей версией → показываем новые записи
     const newEntries = changelogHistory
-      .filter(entry => compareSemver(entry.version, effectiveLastSeen) > 0)
+      .filter(entry => compareSemver(entry.version, lastSeen) > 0)
       .sort((a, b) => compareSemver(b.version, a.version))
 
     // Сразу обновляем версию — повторного показа не будет даже при крэше
@@ -64,15 +103,13 @@ export function useChangelogDetector() {
     // Ограничиваем до 3 версий, чтобы не перегружать UI
     const limited: ChangelogEntry[] = newEntries.slice(0, 3)
 
-    const payload: ChangelogPayload = { entries: limited }
-
     overlayManager.enqueue({
       id: 'changelog',
       type: 'modal',
       scope: 'global',
-      delayBefore: 4500,  // Даём время на начальный рендер + swipe guide / PWA prompt
+      delayBefore: 4500,
       delayAfter: 500,
-      payload,
+      payload: { entries: limited } as ChangelogPayload,
     })
   }
 
