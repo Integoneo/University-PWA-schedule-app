@@ -4,6 +4,7 @@ from xxhash import xxh64
 from pydantic import ValidationError
 import redis.asyncio as aioredis
 
+from app.db.cache import CacheKeys
 from app.db.engine import get_async_session
 from app.utils import get_logger, send_tg_alert, redis_client
 
@@ -87,6 +88,11 @@ async def main_worker_loop():
                             # BIG TODO: Настроить подписки на GOOGLE Firebase что бы отправлять уведолмения
                             # об изменении расписания студентам
                             # но это вообще на потом
+
+                            # INFO: Инвалидирую ключ преподавателей
+                            # Вдруг какие то связи удалятся
+                            await redis_client.delete(CacheKeys.teachers)
+
                             await send_tg_alert(
                                 "Python worker",
                                 "INFO",

@@ -108,6 +108,9 @@ class Teacher(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
+    canonical_id: Optional[int] = Field(
+        index=True, default=None, foreign_key="teachers.id"
+    )
 
     lessons: List["Lesson"] = Relationship(
         back_populates="teachers", link_model=LessonTeacherLink

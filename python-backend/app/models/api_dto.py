@@ -63,3 +63,26 @@ class InstallPWAPayload(BaseModel):
     device_cpu_count: int = Field(gt=0, le=64)
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# INFO: Для эндпоинтов с учителями
+
+
+class TeacherLessonPWA(BaseModel):
+    day_of_week: int
+    is_even_week: bool
+    lesson_name: str
+    type_of_lesson: str
+    classroom: str
+    educational_place: str
+    start_time: time
+    end_time: time
+    groups: List[str]  # Массив групп, которые мы собрали через array_agg
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TeacherScheduleResponse(BaseModel):
+    # Оборачиваем в словарь {"lessons": [...]}, чтобы сохранить
+    # консистентность с эндпоинтом групп, где тоже есть корневые ключи
+    lessons: List[TeacherLessonPWA]

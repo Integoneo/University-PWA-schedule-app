@@ -1,8 +1,81 @@
 import { reactive } from 'vue'
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ПРЕДОХРАНИТЕЛЬ КЭША
+// Запускается один раз при инициализации модуля, ДО любого чтения localStorage.
+//
+// Логика:
+//   • storedVersion отсутствует  → старый пользователь → только структурная валидация
+//   • storedVersion совпадает    → нормальный запуск
+//   • storedVersion не совпадает → плановый breaking change → сброс + новая версия
+//   • Любая структурная ошибка   → сброс + новая версия
+//
+// При сбросе сохраняются: user_device_id и все api_* ключи.
+// Редирект на /welcome выполняется автоматически через router.beforeEach,
+// т.к. store.groupInfo окажется null.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Увеличь при любом BREAKING CHANGE в структуре user_group / user_favorites */
+const DATA_VERSION = '1'
+
+function _clearUserData(): void {
+  const toKeep = new Set(
+    Object.keys(localStorage).filter(k => k.startsWith('api_') || k === 'user_device_id')
+  )
+  Object.keys(localStorage).forEach(k => {
+    if (!toKeep.has(k)) localStorage.removeItem(k)
+  })
+}
+
+;(function runCacheGuard(): void {
+  const storedVersion = localStorage.getItem('app_data_version')
+
+  // Плановый breaking change: версия изменилась — сброс
+  if (storedVersion !== null && storedVersion !== DATA_VERSION) {
+    _clearUserData()
+    localStorage.setItem('app_data_version', DATA_VERSION)
+    return
+  }
+
+  // Структурная валидация user_group
+  const rawGroup = localStorage.getItem('user_group')
+  if (rawGroup) {
+    try {
+      const g = JSON.parse(rawGroup)
+      if (!g || typeof g !== 'object' || !('group_id' in g) || !('group_name' in g)) {
+        throw new Error('invalid_group_structure')
+      }
+    } catch {
+      // Битые или несовместимые данные → полный сброс
+      _clearUserData()
+      localStorage.setItem('app_data_version', DATA_VERSION)
+      return
+    }
+  }
+
+  // Структурная валидация user_favorites
+  const rawFavs = localStorage.getItem('user_favorites')
+  if (rawFavs) {
+    try {
+      if (!Array.isArray(JSON.parse(rawFavs))) throw new Error('invalid_favorites_structure')
+    } catch {
+      // Только избранное сломано — удаляем только его, не трогаем группу
+      localStorage.removeItem('user_favorites')
+    }
+  }
+
+  // Всё валидно — фиксируем версию (для старых пользователей это первая запись)
+  if (!storedVersion) {
+    localStorage.setItem('app_data_version', DATA_VERSION)
+  }
+})()
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const savedGroup = localStorage.getItem('user_group')
 const savedFavorites = localStorage.getItem('user_favorites')
 
+// После предохранителя гарантированно валидный JSON или null
 const parsedGroup = savedGroup ? JSON.parse(savedGroup) : null
 
 export const store = reactive({
@@ -40,12 +113,16 @@ export const store = reactive({
   setViewingGroup(groupData: any, context: 'favorite' | 'guest') {
     this.currentViewingGroup = groupData
     this.viewContext = context
+    // Если был открыт режим преподавателя — закрываем его
+    this.currentViewingTeacher = null
   },
 
   // Функция быстрого возврата на 🏠 Основную группу
   resetToMainGroup() {
     this.currentViewingGroup = this.groupInfo
     this.viewContext = 'main'
+    // Если был открыт режим преподавателя — закрываем его
+    this.currentViewingTeacher = null
   },
 
   // Открыть расписание преподавателя (переключает Schedule.vue в режим препода)

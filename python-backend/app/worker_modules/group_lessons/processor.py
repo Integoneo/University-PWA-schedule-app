@@ -146,9 +146,15 @@ async def process_schedule(
         existing_teachers = await session.scalars(request)
         teacher_cache = {t.name: t for t in existing_teachers if t.name}
 
+        for t in teacher_cache.values():
+            # Инвалидируем все ключи преподавателей, потому что расписание может обновиться
+            await redis_client.delete(CacheKeys.one_teacher(t.id))  # pyright: ignore
+
         missing_names = unique_teacher_names - set(teacher_cache.keys())
 
         if missing_names:
+            # INFO: Инвалидирую кэш преподавателей, если появляется новый препод
+            await redis_client.delete(CacheKeys.teachers)
             new_teachers = [Teacher(name=name) for name in missing_names]
             session.add_all(new_teachers)
             await session.flush()

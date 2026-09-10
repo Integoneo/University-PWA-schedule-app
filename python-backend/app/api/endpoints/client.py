@@ -1,21 +1,38 @@
 from fastapi import APIRouter, Depends, Header, Response, status, HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, col
+from sqlmodel import select, col, func, or_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 import hashlib
 import json
 import redis.asyncio as aioredis
 
+from app.db import cache
 from app.db.engine import get_async_session  # Сессия для PostgreSQL
 from app.db.cache import (
     get_redis_session,
     CacheKeys,
 )  # Сессия для Redis и ключи для кэша
 from app.api.endpoints.stats import track_activity_buffer
-from app.models.api_dto import GroupScheduleResponse, Institutes_PWA_schema, LessonPWA
-from app.models.schedule import AppConfig, Group, Institute, Lesson
+from app.models.api_dto import (
+    GroupScheduleResponse,
+    Institutes_PWA_schema,
+    LessonPWA,
+    TeacherPWA,
+    TeacherScheduleResponse,
+    TeacherLessonPWA,
+)
+from app.models.schedule import (
+    AppConfig,
+    Group,
+    Institute,
+    Lesson,
+    Teacher,
+    LessonTeacherLink,
+)
+from app.utils import send_tg_alert
+from xxhash import xxh64
 
 router = APIRouter(
     prefix="/client",
@@ -164,6 +181,12 @@ async def get_group_schedule(
     try:
         cached_schedule_str = await redis.get(cache_key)
     except Exception as e:
+        await send_tg_alert(
+            "Fastapi server",
+            "CRITICAL",
+            "Ошибка при подключении к Redis",
+            f"{e.__class__.__name__}",
+        )
         print(f"⚠️ [Redis Error GET]: {e}. Идем в БД за расписанием группы {group_id}")
 
     # Если в кэше пусто (или Редис лежит)
@@ -226,4 +249,209 @@ async def get_group_schedule(
     response.headers["ETag"] = cached_data["ETag"]
 
     # FastAPI сам отдаст этот словарь как JSON со статусом 200 OK
+    return cached_data["value"]
+
+
+@router.get("/teachers", response_model=List[TeacherPWA])
+async def get_teacher_list(
+    response: Response,
+    if_none_match: Optional[str] = Header(None),
+    session: AsyncSession = Depends(get_async_session),
+    redis: aioredis.Redis = Depends(get_redis_session),
+):
+    """
+    Эндпоинт для получения списка всех доступных учителей в вузе
+    Поддерживает HTTP Кэширование и Redis-cache
+    """
+
+    cache_key = CacheKeys.teachers
+    cached_teachers_str = None
+
+    # 1. Безопасно пытаемся прочитать из Редиса
+    try:
+        cached_teachers_str = await redis.get(cache_key)
+    except Exception as e:
+        await send_tg_alert(
+            "Fastapi server",
+            "CRITICAL",
+            "Ошибка при подключении к Redis",
+            f"{e.__class__.__name__}",
+        )
+        print(f"⚠️ [Redis Error GET]: {e}. Идем в БД за списком учителей")
+
+    # 2. Если данных в кэше нет — идем в БД
+    if not cached_teachers_str:
+        has_lessons_subquery = (
+            select(LessonTeacherLink.teacher_id).where(
+                LessonTeacherLink.teacher_id == Teacher.id
+            )
+        ).exists()
+
+        query = (
+            select(Teacher.id, Teacher.name)
+            .where(
+                Teacher.canonical_id.is_(None)  # pyright: ignore
+            )
+            .where(has_lessons_subquery)
+            .order_by(Teacher.name)
+        )
+
+        result = await session.execute(query)
+        # mappings() гарантирует, что мы получим dict-подобные объекты
+        teachers_obj = result.mappings().all()
+
+        adapter = TypeAdapter(List[TeacherPWA])
+        pydantic_models = adapter.validate_python(teachers_obj)
+
+        teachers_json_bytes = adapter.dump_json(pydantic_models)
+        teachers_dict = adapter.dump_python(pydantic_models, mode="json")
+
+        current_ETag = xxh64(teachers_json_bytes).hexdigest()
+
+        cached_data = {"value": teachers_dict, "ETag": current_ETag}
+        cached_data_bytes = json.dumps(cached_data)
+
+        try:
+            await redis.set(cache_key, cached_data_bytes, ex=604800)
+        except Exception as e:
+            await send_tg_alert(
+                "Fastapi server",
+                "CRITICAL",
+                "Ошибка при подключении к Redis",
+                f"{e.__class__.__name__}",
+            )
+            print(f"⚠️ [Redis Error SET]: {e}. Невозможно добавить кэш")
+
+    else:
+        # Если данные нашлись в кэше
+        cached_data = json.loads(cached_teachers_str)
+
+    # 3. HTTP Кэширование на стороне телефона (ОБЩИЙ БЛОК ДЛЯ ВСЕХ ИСХОДОВ)
+    if if_none_match == cached_data["ETag"]:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+
+    # Обязательно отдаем ETag, чтобы в следующий раз клиент прислал if_none_match
+    response.headers["ETag"] = cached_data["ETag"]
+
+    # FastAPI сам отдаст этот словарь как JSON со статусом 200 OK
+    return cached_data["value"]
+
+
+@router.get("/teachers/{teacher_id}/schedule", response_model=TeacherScheduleResponse)
+async def get_teacher_schedule(
+    response: Response,
+    teacher_id: int,
+    if_none_match: Optional[str] = Header(None),
+    session: AsyncSession = Depends(get_async_session),
+    redis: aioredis.Redis = Depends(get_redis_session),
+):
+    """
+    Получение расписания преподавателя.
+    Оптимизировано для PWA, кэшируется в Redis, поддерживает ETag.
+    Склеивает пары каноничного профиля и всех его мусорных алиасов.
+    """
+
+    # Базовая валидация ID
+    if teacher_id < 1 or teacher_id > 100_000:
+        raise HTTPException(status_code=404, detail="Преподаватель не найден")
+
+    cache_key = CacheKeys.one_teacher(teacher_id)
+    cached_schedule_str = None
+
+    # 1. Читаем из Redis
+    try:
+        cached_schedule_str = await redis.get(cache_key)
+    except Exception as e:
+        await send_tg_alert(
+            "Fastapi server",
+            "CRITICAL",
+            "Ошибка при подключении к Redis",
+            f"{e.__class__.__name__}",
+        )
+        print(
+            f"⚠️ [Redis Error GET]: {e}. Идем в БД за расписанием препода {teacher_id}"
+        )
+
+    # 2. Если в кэше пусто (или Редис лежит) - собираем данные из БД
+    if not cached_schedule_str:
+        # Сначала быстрая проверка: существует ли вообще такой преподаватель?
+        # (Чтобы не возвращать пустой список пар для несуществующего ID, а честно отдавать 404)
+        teacher_exists = await session.scalar(
+            select(Teacher.id).where(Teacher.id == teacher_id)
+        )
+        if not teacher_exists:
+            raise HTTPException(status_code=404, detail="Преподаватель не найден")
+
+        # Наш SQL-монстр со склейкой алиасов и агрегацией групп
+        query = (
+            select(  # pyright: ignore
+                Lesson.day_of_week,
+                Lesson.is_even_week,
+                Lesson.lesson_name,
+                Lesson.type_of_lesson,
+                Lesson.classroom,
+                Lesson.educational_place,
+                Lesson.start_time,
+                Lesson.end_time,
+                func.array_agg(func.distinct(Group.name)).label("groups"),
+            )
+            .select_from(Teacher)
+            .join(LessonTeacherLink, LessonTeacherLink.teacher_id == Teacher.id)
+            .join(Lesson, Lesson.id == LessonTeacherLink.lesson_id)
+            .join(Group, Group.id == Lesson.group_id)
+            .where(or_(Teacher.id == teacher_id, Teacher.canonical_id == teacher_id))
+            .group_by(
+                Lesson.day_of_week,
+                Lesson.is_even_week,
+                Lesson.lesson_name,
+                Lesson.type_of_lesson,
+                Lesson.classroom,
+                Lesson.educational_place,
+                Lesson.start_time,
+                Lesson.end_time,
+            )
+            .order_by(
+                Lesson.is_even_week.asc(),  # pyright: ignore
+                Lesson.day_of_week.asc(),  # pyright: ignore
+                Lesson.start_time.asc(),  # pyright: ignore
+            )
+        )
+
+        result = await session.execute(query)
+        schedule_data = result.mappings().all()
+
+        # Валидируем массив пар через Pydantic
+        adapter = TypeAdapter(List[TeacherLessonPWA])
+        pydantic_lessons = adapter.validate_python(schedule_data)
+
+        # Формируем итоговый словарь. Для препода метаданных меньше,
+        # но мы сохраняем общую структуру словаря с ключом "lessons"
+        final_dict = {"lessons": adapter.dump_python(pydantic_lessons, mode="json")}
+
+        # Генерируем ETag на лету, так как у нас нет готового хэша в базе
+        final_json_bytes = json.dumps(final_dict).encode("utf-8")
+        current_ETag = f'"{xxh64(final_json_bytes).hexdigest()}"'
+
+        # Пакуем для Редиса
+        cached_data = {"value": final_dict, "ETag": current_ETag}
+        cached_schedule_bytes = json.dumps(cached_data)
+
+        try:
+            await redis.set(cache_key, cached_schedule_bytes, ex=604800)  # 7 дней
+        except Exception as e:
+            print(
+                f"⚠️ [Redis Error SET]: {e}. Не удалось закэшировать расписание препода {teacher_id}"
+            )
+
+    else:
+        # Если данные нашлись в кэше
+        cached_data = json.loads(cached_schedule_str)
+
+    # 3. HTTP Кэширование на стороне телефона (ОБЩИЙ БЛОК)
+    if if_none_match == cached_data["ETag"]:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+
+    response.headers["ETag"] = cached_data["ETag"]
+
+    # Отдаем JSON клиенту
     return cached_data["value"]
