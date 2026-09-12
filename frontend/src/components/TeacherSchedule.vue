@@ -14,6 +14,7 @@ import { store } from '../store'
 
 import { useTeacherScheduleData } from '../composables/schedule/useTeacherScheduleData'
 import { useWeekNavigation } from '../composables/schedule/useWeekNavigation'
+import { useMidnightReset } from '../composables/schedule/useMidnightReset'
 import { groupLessonsWithOverlaps, computeGaps } from '../composables/schedule/useTeacherMath'
 import TeacherScheduleHeader from './schedule/TeacherScheduleHeader.vue'
 import WeekDayPicker from './schedule/WeekDayPicker.vue'
@@ -25,8 +26,8 @@ import TeacherScheduleBody from './schedule/TeacherScheduleBody.vue'
 const teacherId   = store.currentViewingTeacher!.id
 const teacherName = store.currentViewingTeacher!.name
 
-// ── Опорная дата ──────────────────────────────────────────────────────────
-const realToday    = new Date()
+// ── Опорная дата (ref — обновляется в полночь) ────────────────────────────
+const realToday    = ref(new Date())
 const selectedDate = ref(new Date())
 
 // ── Данные ───────────────────────────────────────────────────────────────
@@ -44,7 +45,16 @@ const {
 } = useWeekNavigation({ selectedDate, semesterStartDate, anchorIsEven })
 
 // ── Текущие минуты (для индикаторов сейчас/скоро) ────────────────────────
-const currentMinutes = ref(realToday.getHours() * 60 + realToday.getMinutes())
+const currentMinutes = ref(realToday.value.getHours() * 60 + realToday.value.getMinutes())
+
+// ── Автоматический переход через полночь ──────────────────────────────────
+useMidnightReset({
+  realToday,
+  selectedDate,
+  onNewDay: (newToday) => {
+    currentMinutes.value = newToday.getHours() * 60 + newToday.getMinutes()
+  },
+})
 let tickTimer: ReturnType<typeof setInterval>
 
 // ── Пары текущего дня → группировка → окна ───────────────────────────────

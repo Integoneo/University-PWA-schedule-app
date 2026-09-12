@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useScheduleData } from '../composables/schedule/useScheduleData'
 import { useWeekNavigation } from '../composables/schedule/useWeekNavigation'
+import { useMidnightReset, setMockDateSource } from '../composables/schedule/useMidnightReset'
 import { overlayManager } from '../composables/useOverlayManager'
 import { store } from '../store'
 import ScheduleHeader from './schedule/ScheduleHeader.vue'
@@ -11,8 +12,8 @@ import GroupInfoSheet from './schedule/GroupInfoSheet.vue'
 import ExcelModal from './schedule/ExcelModal.vue'
 import TeacherSchedule from './TeacherSchedule.vue'
 
-// ── Константы ──────────────────────────────────────────────────────────────
-const realToday = new Date()
+// ── Опорная дата (ref — обновляется в полночь) ─────────────────────────────
+const realToday = ref(new Date())
 const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 const shortDays = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
 
@@ -36,6 +37,16 @@ const {
 const isGroupSheetOpen = ref(false)
 const isExcelModalOpen = ref(false)
 const currentMinutes = ref(new Date().getHours() * 60 + new Date().getMinutes())
+
+// ── Автоматический переход через полночь ───────────────────────────────────
+// visibilitychange + setInterval(60s) — надёжнее setTimeout для PWA.
+const { checkDayChange } = useMidnightReset({
+  realToday,
+  selectedDate,
+  onNewDay: (newToday) => {
+    currentMinutes.value = newToday.getHours() * 60 + newToday.getMinutes()
+  },
+})
 
 // ── Computed: данные группы и даты семестра ────────────────────────────────
 const groupInfo = computed(() => store.currentViewingGroup || {
@@ -256,12 +267,38 @@ onMounted(() => {
     currentMinutes.value = now.getHours() * 60 + now.getMinutes()
   }, 10000)
 
-  // Хак для тестирования времени из консоли браузера: window.setMockTime(14, 20)
+  // ── DEV-хаки для консоли браузера ──────────────────────────────────────
   if (typeof window !== 'undefined') {
-    (window as any).setMockTime = (hours: number, minutes: number) => {
+    // window.setMockTime(14, 20) — заморозить отображение времени на нужном часу
+    ;(window as any).setMockTime = (hours: number, minutes: number) => {
       clearInterval(timerId)
       currentMinutes.value = hours * 60 + minutes
-      store.addToast(`Время заморожено на ${hours}:${minutes}`, 'info')
+      store.addToast(`⏰ Время заморожено на ${hours}:${String(minutes).padStart(2, '0')}`, 'info')
+    }
+
+    // window.debugSetDate('2026-09-07') — форсировать дату для теста смены суток.
+    //   Передай ISO-строку (дата нового дня, например следующего понедельника).
+    //   Вызов автоматически тригернёт checkDayChange() — если дата отличается
+    //   от текущей realToday, стейт обновится и чётность пересчитается.
+    //   window.debugSetDate(null) — сбросить мок.
+    ;(window as any).debugSetDate = (isoStringOrNull: string | null) => {
+      if (isoStringOrNull) {
+        const mockDate = new Date(isoStringOrNull)
+        if (isNaN(mockDate.getTime())) {
+          store.addToast('❌ Неверный формат даты. Пример: "2026-09-07"', 'error')
+          return
+        }
+        setMockDateSource(mockDate)
+        checkDayChange()
+        store.addToast(
+          `🗓 Мок-дата: ${mockDate.toLocaleDateString('ru')} — проверяй чётность и день`,
+          'info',
+        )
+      } else {
+        setMockDateSource(null)
+        checkDayChange()
+        store.addToast('🗓 Мок-дата сброшена → реальная дата', 'info')
+      }
     }
   }
 })

@@ -27,10 +27,16 @@ export function useWeekNavigation(options: {
   // --- вычисляемые свойства ---
 
   const isEvenWeek = computed(() => {
-    const start = semesterStartDate.value.getTime()
-    const current = selectedDate.value.getTime()
-    const diffDays = Math.floor((current - start) / (24 * 60 * 60 * 1000))
+    // Нормализуем обе даты к полуночи, чтобы время суток не влияло на расчёт.
+    // Без этого selectedDate = 23:59:59 мог давать diffDays на 1 меньше, чем надо,
+    // а при DST-переходах (летнее ↔ зимнее время) сутки могут быть 23 или 25 ч.
+    const start   = new Date(semesterStartDate.value); start.setHours(0, 0, 0, 0)
+    const current = new Date(selectedDate.value);      current.setHours(0, 0, 0, 0)
+
+    // Math.round вместо Math.floor: устойчивость к DST-сдвигам (±1 ч не ломает)
+    const diffDays  = Math.round((current.getTime() - start.getTime()) / 86_400_000)
     const diffWeeks = Math.floor(diffDays / 7)
+
     return anchorIsEven.value ? (diffWeeks % 2 === 0) : (diffWeeks % 2 !== 0)
   })
 

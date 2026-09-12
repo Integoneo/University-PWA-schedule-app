@@ -9,7 +9,7 @@ import { api } from '../../api'
  * Принимает внешний selectedDate (владелец — Schedule.vue) и обновляет его
  * после получения дат семестра с бэкенда.
  */
-export function useScheduleData(options: { selectedDate: Ref<Date>; realToday: Date }) {
+export function useScheduleData(options: { selectedDate: Ref<Date>; realToday: Ref<Date> }) {
   const { selectedDate, realToday } = options
   const router = useRouter()
 
@@ -76,7 +76,7 @@ export function useScheduleData(options: { selectedDate: Ref<Date>; realToday: D
 
       // === ЛОГИКА ФОКУСИРОВКИ НА ДНЕ ===
       if (educationStart.value && educationEnd.value) {
-        const todayTime = realToday.getTime()
+        const todayTime = realToday.value.getTime()
         const startTimeSemester = educationStart.value.getTime()
         const endTimeSemester = educationEnd.value.getTime()
 
@@ -85,10 +85,10 @@ export function useScheduleData(options: { selectedDate: Ref<Date>; realToday: D
         } else if (todayTime < startTimeSemester) {
           selectedDate.value = new Date(educationStart.value)
         } else {
-          if (!isManual) selectedDate.value = new Date(realToday)
+          if (!isManual) selectedDate.value = new Date(realToday.value)
         }
       } else {
-        if (!isManual) selectedDate.value = new Date(realToday)
+        if (!isManual) selectedDate.value = new Date(realToday.value)
       }
 
       if (isManual) {

@@ -18,7 +18,7 @@ import type { TeacherLesson } from './useTeacherMath'
 export function useTeacherScheduleData(options: {
   teacherId: string | number
   selectedDate: Ref<Date>
-  realToday: Date
+  realToday: Ref<Date>
 }) {
   const { teacherId, selectedDate, realToday } = options
 
@@ -76,7 +76,7 @@ export function useTeacherScheduleData(options: {
 
       // При первом запуске позиционируемся на сегодня
       if (!isManual) {
-        selectedDate.value = new Date(realToday)
+        selectedDate.value = new Date(realToday.value)
       }
 
       if (isManual) {
