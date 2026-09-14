@@ -257,8 +257,6 @@ def parse_and_count_schedule(
     # Итоговый селектор: ищет target_cls внутри parent_cls, но исключает те, что внутри main_id
     blocks_inst = soup.select(f"{parent_cls} {target_cls}:not({main_id} {target_cls})")
 
-    print(blocks_inst)
-
     # Проходимся по всем блокам институтов
     for inst in blocks_inst:
         # Собираем все классы блока институтов, что бы скипать блоки
