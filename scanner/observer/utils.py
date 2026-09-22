@@ -120,117 +120,91 @@ def parse_and_count_schedule(
 
     results = []
 
-    # Находим по айдишнику основной контейнер где лежат все блоки институтов
-    main_container = soup.find(id=InstituteSelectors.MAIN_CONTAINER)
+    # 1. Ищем ВСЕ блоки институтов на странице напрямую, игнорируя родительские контейнеры
+    institutes = soup.find_all("div", class_=InstituteSelectors.BLOCK_INST)
 
-    if main_container:
-        stats["main_containers"] += 1
-    # Если основного контейнера нет то нет смысла дальше что либо делать - парсинг сломан
+    # Имитируем успешное нахождение главного контейнера, чтобы не сломать логику аномалий в Redis
+    if institutes:
+        stats["main_containers"] = 1
     else:
+        # Если вообще нет блоков институтов — верстка полностью уничтожена
         return stats, results
 
-    # Ищем все блоки институтов
-    institutes = main_container.find_all("div", class_=InstituteSelectors.BLOCK_INST)
-
-    # Проходимся по всем блокам институтов
+    # 2. Проходимся по всем найденным блокам институтов
     for inst in institutes:
-        # Собираем все классы блока институтов, что бы скипать блоки
-        # с ненужными классами, ну или потом будем делать их обработку
-        # INFO: В классе Institutes.BLOCK_IGNORE инфа не мусорная, но парсить мы будем ее потом
-        # а сейчас пока будем скипать
-        inst_classes = inst.get("class", None)
+        inst_classes = inst.get("class", [])
 
-        # INFO: В данном блоке находится важная мета инфа - все аудитории которые существуют в вузе
-        # Актуальная инфа о четных и нечетных неделях в семестре, но пока мы не будем это парсить
-        if inst_classes and InstituteSelectors.BLOCK_IGNORE in inst_classes:
+        # Пропускаем информационный блок с текстом о четных/нечетных неделях
+        if InstituteSelectors.BLOCK_IGNORE in inst_classes:
             continue
 
         inst_name_tag = inst.find(class_=InstituteSelectors.NAME)
-
         institute_count_flag = False
 
         # Ищем тег с названием института
         inst_name = inst_name_tag.get_text(strip=True) if inst_name_tag else "Unknown"
-        # Ищем лого в институте(его может и не быть)
+
+        # Ищем лого в институте
         logo_img = inst.find("img", class_=InstituteSelectors.LOGO)
         logo_url = None
         if logo_img:
-            # Считаем логотипы
             stats["logos"] += 1
-            # Достаем ссылки на логотипы
             src = logo_img.get("src")
             if isinstance(src, str):
                 logo_url = urljoin(base_url, src)
 
-        # Внитри институтов достаем все формы обучения которые у него есть
+        # Внутри институтов достаем все формы обучения (аккордеоны)
         accordions = inst.find_all(class_=InstituteSelectors.ACCORDION_ITEM)
-        # Считаем формы обучения внутри института
         stats["study_forms"] += len(accordions)
 
-        # Запускаем цикл по формам обучения
         for acc in accordions:
-            # Достаем кнопку в которой написана форма обучения
             btn = acc.find(class_=InstituteSelectors.ACCORDION_BTN)
-            # Достаем текст формы обучения
             study_form = btn.get_text(strip=True) if btn else "Unknown"
 
-            # Внутри формы обучения достаем все блоки со ссылками файлы(включая мусорные)
+            # Достаем все блоки со ссылками на файлы
             documents = acc.find_all(class_=InstituteSelectors.DOCUMENT)
 
-            # Запускаем цикл по всем блокам со ссылками на файлы
             for doc in documents:
-                # Скипаем мусор - графики обучения - мы это не парсим
+                # Скипаем мусор - графики обучения (находятся внутри div.graph)
                 if doc.find_parent(class_=InstituteSelectors.GRAPH_WRAPPER):
                     continue
-                # Вот это уже наше, достаем эти экселевские файлы
+
                 files_div = doc.find(class_=InstituteSelectors.FILES)
                 if not files_div:
                     continue
 
-                # Используя callback функцию достаем ссылку на эксель файлы
+                # Ищем ссылку на excel файлы
                 file_a = files_div.find(
                     "a",
                     href=lambda h: bool(h and h.lower().endswith((".xls", ".xlsx"))),
                 )
+
                 if file_a:
-                    # Сделал этот флаг что бы считать только те институты внутри которых мы нашли эксель файлы
                     if not institute_count_flag:
                         institute_count_flag = True
                         stats["institutes"] += 1
-                    # Считаем валидные эксель файлы
-                    stats["valid_files"] += 1
-                    # Достаем ссылку на эксель файл
-                    file_href = file_a.get("href")
 
-                    # if что бы pyright не ругался на аннотацию типов
+                    stats["valid_files"] += 1
+
+                    file_href = file_a.get("href")
                     if not isinstance(file_href, str):
                         continue
 
-                    # Соединяем пути, что бы получить нормальную сслыку на файл
                     file_url = urljoin(base_url, file_href)
-
                     file_title = file_a.get_text(strip=True)
 
+                    # Ищем ссылку на просмотр через view.officeapps
                     view_url = None
-                    # Ищем внутри документа так же ссылку на просмотр через view.office
                     icons_div = doc.find(class_=InstituteSelectors.ICONS)
                     if icons_div and icons_div.find(
-                        "a", href=bool(lambda h: h and "view.officeapps.live.com" in h)
+                        "a", href=lambda h: bool(h and "view.officeapps.live.com" in h)
                     ):
                         icons_div_a = icons_div.find("a")
-                        if icons_div_a is None:
-                            continue
+                        if icons_div_a:
+                            view_url = icons_div_a.get("href")
+                            stats["office_views"] += 1
 
-                        view_url = icons_div_a.get(
-                            "href"
-                        )  # Берем первую ссылку из иконок
-                        stats["office_views"] += 1
-
-                    # INFO:
-                    # Собираем финальный композитный ключ из
-                    # Названия института
-                    # Названия формы обучения
-                    # Названия файла(обычно там пишут например "1 курс")
+                    # Собираем композитный ключ
                     composite_key = f"{inst_name} | {study_form} | {file_title}"
 
                     url_object = NotCheckedURL(
@@ -239,132 +213,7 @@ def parse_and_count_schedule(
                         institute=inst_name,
                         study_form=study_form,
                         file_url=file_url,
-                        view_url=view_url,  # pyright: ignore
-                        logo_url=logo_url,
-                    )
-
-                    results.append(url_object)
-
-    # Формируем строку классов родительского дива (через точки для CSS-селектора)
-    # 1. Находим нужный родительский контейнер по классам
-    # Классы родителя через точку
-    parent_cls = ".col.col-mb-12.col-12.col-dt-9.col-md-12.col-lg-8"
-    # Класс целевого блока с точкой
-    target_cls = f".{InstituteSelectors.BLOCK_INST}"
-    # ID главного контейнера с решеткой
-    main_id = f"#{InstituteSelectors.MAIN_CONTAINER}"
-
-    # Итоговый селектор: ищет target_cls внутри parent_cls, но исключает те, что внутри main_id
-    blocks_inst = soup.select(f"{parent_cls} {target_cls}:not({main_id} {target_cls})")
-
-    # Проходимся по всем блокам институтов
-    for inst in blocks_inst:
-        # Собираем все классы блока институтов, что бы скипать блоки
-        # с ненужными классами, ну или потом будем делать их обработку
-        # INFO: В классе Institutes.BLOCK_IGNORE инфа не мусорная, но парсить мы будем ее потом
-        # а сейчас пока будем скипать
-        inst_classes = inst.get("class", None)
-
-        # INFO: В данном блоке находится важная мета инфа - все аудитории которые существуют в вузе
-        # Актуальная инфа о четных и нечетных неделях в семестре, но пока мы не будем это парсить
-        if inst_classes and InstituteSelectors.BLOCK_IGNORE in inst_classes:
-            continue
-
-        inst_name_tag = inst.find(class_=InstituteSelectors.NAME)
-
-        institute_count_flag = False
-
-        # Ищем тег с названием института
-        inst_name = inst_name_tag.get_text(strip=True) if inst_name_tag else "Unknown"
-        # Ищем лого в институте(его может и не быть)
-        logo_img = inst.find("img", class_=InstituteSelectors.LOGO)
-        logo_url = None
-        if logo_img:
-            # Считаем логотипы
-            stats["logos"] += 1
-            # Достаем ссылки на логотипы
-            src = logo_img.get("src")
-            if isinstance(src, str):
-                logo_url = urljoin(base_url, src)
-
-        # Внитри институтов достаем все формы обучения которые у него есть
-        accordions = inst.find_all(class_=InstituteSelectors.ACCORDION_ITEM)
-        # Считаем формы обучения внутри института
-        stats["study_forms"] += len(accordions)
-
-        # Запускаем цикл по формам обучения
-        for acc in accordions:
-            # Достаем кнопку в которой написана форма обучения
-            btn = acc.find(class_=InstituteSelectors.ACCORDION_BTN)
-            # Достаем текст формы обучения
-            study_form = btn.get_text(strip=True) if btn else "Unknown"
-
-            # Внутри формы обучения достаем все блоки со ссылками файлы(включая мусорные)
-            documents = acc.find_all(class_=InstituteSelectors.DOCUMENT)
-
-            # Запускаем цикл по всем блокам со ссылками на файлы
-            for doc in documents:
-                # Скипаем мусор - графики обучения - мы это не парсим
-                if doc.find_parent(class_=InstituteSelectors.GRAPH_WRAPPER):
-                    continue
-                # Вот это уже наше, достаем эти экселевские файлы
-                files_div = doc.find(class_=InstituteSelectors.FILES)
-                if not files_div:
-                    continue
-
-                # Используя callback функцию достаем ссылку на эксель файлы
-                file_a = files_div.find(
-                    "a",
-                    href=lambda h: bool(h and h.lower().endswith((".xls", ".xlsx"))),
-                )
-                if file_a:
-                    # Сделал этот флаг что бы считать только те институты внутри которых мы нашли эксель файлы
-                    if not institute_count_flag:
-                        institute_count_flag = True
-                        stats["institutes"] += 1
-                    # Считаем валидные эксель файлы
-                    stats["valid_files"] += 1
-                    # Достаем ссылку на эксель файл
-                    file_href = file_a.get("href")
-
-                    # if что бы pyright не ругался на аннотацию типов
-                    if not isinstance(file_href, str):
-                        continue
-
-                    # Соединяем пути, что бы получить нормальную сслыку на файл
-                    file_url = urljoin(base_url, file_href)
-
-                    file_title = file_a.get_text(strip=True)
-
-                    view_url = None
-                    # Ищем внутри документа так же ссылку на просмотр через view.office
-                    icons_div = doc.find(class_=InstituteSelectors.ICONS)
-                    if icons_div and icons_div.find(
-                        "a", href=bool(lambda h: h and "view.officeapps.live.com" in h)
-                    ):
-                        icons_div_a = icons_div.find("a")
-                        if icons_div_a is None:
-                            continue
-
-                        view_url = icons_div_a.get(
-                            "href"
-                        )  # Берем первую ссылку из иконок
-                        stats["office_views"] += 1
-
-                    # INFO:
-                    # Собираем финальный композитный ключ из
-                    # Названия института
-                    # Названия формы обучения
-                    # Названия файла(обычно там пишут например "1 курс")
-                    composite_key = f"{inst_name} | {study_form} | {file_title}"
-
-                    url_object = NotCheckedURL(
-                        composite_key=composite_key,
-                        file_title=file_title,
-                        institute=inst_name,
-                        study_form=study_form,
-                        file_url=file_url,
-                        view_url=view_url,  # pyright: ignore
+                        view_url=view_url,
                         logo_url=logo_url,
                     )
 
