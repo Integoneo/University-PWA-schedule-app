@@ -89,8 +89,20 @@ const savedFavoriteTeachers = localStorage.getItem('user_favorite_teachers')
 // После предохранителя гарантированно валидный JSON или null
 const parsedGroup = savedGroup ? JSON.parse(savedGroup) : null
 
+export type AppTheme = 'dark' | 'light' | 'energy' | 'pink'
+
 export const store = reactive({
   deferredPrompt: null as any,
+
+  // 🎨 Текущая тема (персистентна, применяется через data-theme на <html>)
+  currentTheme: (localStorage.getItem('app_theme') || 'dark') as AppTheme,
+
+  setTheme(theme: AppTheme) {
+    this.currentTheme = theme
+    localStorage.setItem('app_theme', theme)
+    document.documentElement.setAttribute('data-theme', theme)
+  },
+
   // 🏠 Основная группа (всегда сохраняется в localStorage)
   groupInfo: parsedGroup,
   

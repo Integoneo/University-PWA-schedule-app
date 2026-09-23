@@ -35,8 +35,8 @@ const formatPlace = (place: string) => {
     :class="{
       'bg-surface/80 border border-line/80 shadow-sm': state === 'future',
       'bg-surface/40 border border-line/40 opacity-50 grayscale-[30%]': state === 'past',
-      'bg-surface/90 border border-warning/30 shadow-[0_0_20px_rgba(245,158,11,0.08)]': state === 'soon',
-      'bg-surface/95 border border-accent/40 shadow-[0_0_25px_rgba(99,102,241,0.15)]': state === 'now',
+      'bg-surface/90 border border-warning/30 shadow-[0_0_20px_var(--warning-glow)]': state === 'soon',
+      'bg-surface/95 border border-accent/40 shadow-[0_0_25px_var(--accent-glow)]': state === 'now',
     }"
   >
     <!-- 1. ЛЕВАЯ КОЛОНКА -->
@@ -76,11 +76,13 @@ const formatPlace = (place: string) => {
         </div>
 
         <div v-if="state === 'now'" class="ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20">
-          <div class="relative flex h-1.5 w-1.5">
+          <div class="relative flex h-1.5 w-1.5 shrink-0">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
             <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-strong"></span>
           </div>
-          <span class="text-[9px] font-bold uppercase tracking-wider text-accent">Идет сейчас</span>
+          <span class="text-[9px] font-bold uppercase tracking-wider text-accent">
+            Идёт · ещё {{ timeLeft }} мин
+          </span>
         </div>
       </div>
 

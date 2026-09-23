@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import BottomSheet from './BottomSheet.vue'
 import { store } from '../store'
+import type { AppTheme } from '../store'
+import { overlayManager } from '../composables/useOverlayManager'
 import { CURRENT_VERSION } from '../config/changelog'
 
 const router = useRouter()
@@ -10,7 +12,65 @@ const router = useRouter()
 // Управление шторками
 const isAboutSheetOpen = ref(false)
 const isShareSheetOpen = ref(false)
-const isDevSheetOpen = ref(false) 
+const isDevSheetOpen = ref(false)
+
+// === ТЕМА ===
+const isThemePickerOpen = computed(
+  () => overlayManager.state.activeItem?.id === 'theme_picker',
+)
+
+const openThemePicker = () => {
+  overlayManager.enqueue({
+    id: 'theme_picker',
+    type: 'modal',
+    scope: 'settings',
+    delayBefore: 0,
+    delayAfter: 0,
+  })
+}
+
+const closeThemePicker = () => {
+  overlayManager.dismiss('theme_picker')
+}
+
+const selectTheme = (theme: AppTheme) => {
+  store.setTheme(theme)
+}
+
+interface ThemeOption {
+  id: AppTheme
+  name: string
+  description: string
+  /** [bg-page, bg-surface, accent, bg-raised] */
+  colors: [string, string, string, string]
+}
+
+const themes: ThemeOption[] = [
+  {
+    id: 'dark',
+    name: 'Тёмная',
+    description: 'Классическая тёмная тема. Комфортна в любое время суток.',
+    colors: ['#020617', '#0f172a', '#818cf8', '#1e293b'],
+  },
+  {
+    id: 'light',
+    name: 'Светлая',
+    description: 'Светлая тема для яркого дневного освещения.',
+    colors: ['#f1f5f9', '#ffffff', '#4f46e5', '#e2e8f0'],
+  },
+  {
+    id: 'energy',
+    name: 'Энергосберегающая',
+    description: 'Чистый чёрный фон. Экономит заряд на OLED-экранах.',
+    colors: ['#000000', '#0a0a0a', '#818cf8', '#141414'],
+  },
+  {
+    id: 'pink',
+    name: 'Pink Glassmorphism',
+    description: 'Розовые карточки с матовым стеклянным эффектом.',
+    colors: ['#0d0010', '#1e0a2e', '#f0abfc', '#2d1040'],
+  },
+]
 
 const goToProfile = () => {
   router.push('/profile')
@@ -107,6 +167,24 @@ const copyPhoneOnly = async () => {
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
             </div>
             <span class="text-base font-semibold text-secondary">Профиль и группы</span>
+          </div>
+          <svg class="w-5 h-5 text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+        </button>
+
+        <div class="h-px w-full bg-line/50 my-1"></div>
+
+        <!-- 0. Тема оформления -->
+        <button @click="openThemePicker" class="flex items-center justify-between p-4 hover:bg-raised/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
+          <div class="flex items-center gap-4">
+            <div class="p-2.5 rounded-xl bg-accent/10 text-accent border border-accent/20">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
+            </div>
+            <div class="flex flex-col">
+              <span class="text-base font-semibold text-secondary">Оформление</span>
+              <span class="text-xs text-subtle capitalize">
+                {{ themes.find(t => t.id === store.currentTheme)?.name || 'Тёмная' }}
+              </span>
+            </div>
           </div>
           <svg class="w-5 h-5 text-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
@@ -292,6 +370,58 @@ const copyPhoneOnly = async () => {
       <button @click="isAboutSheetOpen = false" class="w-full py-4 bg-raised hover:bg-raised/80 text-primary font-bold rounded-xl transition-colors active:scale-[0.98]">
         Понятно, закрыть
       </button>
+    </BottomSheet>
+
+    <!-- 4. Шторка "Оформление" (управляется через overlayManager) -->
+    <BottomSheet :is-open="isThemePickerOpen" @close="closeThemePicker">
+      <template #header>
+        <div class="flex flex-col gap-1 pb-1">
+          <h2 class="text-2xl font-bold text-primary">Оформление</h2>
+          <p class="text-sm text-muted">Выбери тему приложения</p>
+        </div>
+      </template>
+
+      <div class="flex flex-col gap-3 mt-4">
+        <button
+          v-for="theme in themes"
+          :key="theme.id"
+          @click="selectTheme(theme.id)"
+          class="flex items-center gap-4 p-4 rounded-2xl border transition-all duration-200 active:scale-[0.98] text-left"
+          :class="store.currentTheme === theme.id
+            ? 'bg-accent/10 border-accent/40'
+            : 'bg-raised/40 border-line hover:bg-raised/70'"
+        >
+          <!-- Превью палитры -->
+          <div class="flex shrink-0 rounded-xl overflow-hidden border border-line-muted/30 shadow-sm" style="width: 52px; height: 52px;">
+            <div class="grid grid-cols-2 w-full h-full">
+              <div :style="{ background: theme.colors[0] }"></div>
+              <div :style="{ background: theme.colors[2] }"></div>
+              <div :style="{ background: theme.colors[3] }"></div>
+              <div :style="{ background: theme.colors[1] }"></div>
+            </div>
+          </div>
+
+          <!-- Текст -->
+          <div class="flex-1 flex flex-col gap-0.5 min-w-0">
+            <span
+              class="text-sm font-bold"
+              :class="store.currentTheme === theme.id ? 'text-accent' : 'text-primary'"
+            >{{ theme.name }}</span>
+            <span class="text-xs text-muted leading-snug">{{ theme.description }}</span>
+          </div>
+
+          <!-- Индикатор выбора -->
+          <div class="shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all"
+            :class="store.currentTheme === theme.id
+              ? 'bg-accent text-page'
+              : 'border border-line-muted'"
+          >
+            <svg v-if="store.currentTheme === theme.id" class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+            </svg>
+          </div>
+        </button>
+      </div>
     </BottomSheet>
   </div>
 </template>

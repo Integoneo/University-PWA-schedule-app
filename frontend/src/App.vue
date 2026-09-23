@@ -50,6 +50,9 @@ const router = useRouter()
 const { check: checkChangelog } = useChangelogDetector()
 
 onMounted(() => {
+  // 0a. Применяем сохранённую тему до первого рендера (до любой другой логики)
+  document.documentElement.setAttribute('data-theme', store.currentTheme)
+
   // 0. Проверяем новые версии и при необходимости ставим в очередь модалку
   checkChangelog()
 

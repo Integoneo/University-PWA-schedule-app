@@ -51,6 +51,12 @@ const getLessonState = (lesson: any): 'future' | 'past' | 'soon' | 'now' => {
 }
 
 const getTimeLeft = (lesson: any) => {
+  // Для идущей пары — сколько минут до её окончания.
+  // Для остальных состояний (в т.ч. soon) — сколько минут до начала.
+  const state = getLessonState(lesson)
+  if (state === 'now') {
+    return parseTime(lesson.end_time) - props.currentMinutes
+  }
   return parseTime(lesson.start_time) - props.currentMinutes
 }
 </script>

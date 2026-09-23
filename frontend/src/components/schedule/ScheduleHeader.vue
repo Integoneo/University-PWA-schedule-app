@@ -73,7 +73,7 @@ defineEmits<{
     </div>
 
     <div class="flex items-end justify-between relative z-10">
-      <h2 class="text-3xl font-bold tracking-tight bg-gradient-to-br from-white to-muted bg-clip-text text-transparent capitalize mb-1">
+      <h2 class="text-3xl font-bold tracking-tight bg-gradient-to-br from-primary to-muted bg-clip-text text-transparent capitalize mb-1">
         {{ monthNames[selectedDate.getMonth()] }}
       </h2>
 
