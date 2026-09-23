@@ -41,8 +41,7 @@ interface ThemeOption {
   id: AppTheme
   name: string
   description: string
-  /** [bg-page, bg-surface, accent, bg-raised] */
-  colors: [string, string, string, string]
+  color: string // Теперь здесь только одна строка (HEX или градиент)
 }
 
 const themes: ThemeOption[] = [
@@ -50,28 +49,27 @@ const themes: ThemeOption[] = [
     id: 'dark',
     name: 'Тёмная',
     description: 'Классическая тёмная тема. Комфортна в любое время суток.',
-    colors: ['#020617', '#0f172a', '#818cf8', '#1e293b'],
+    color: '#0f172a', // Глубокий slate-900
   },
   {
     id: 'light',
     name: 'Светлая',
     description: 'Светлая тема для яркого дневного освещения.',
-    colors: ['#f1f5f9', '#ffffff', '#4f46e5', '#e2e8f0'],
+    color: '#ffffff', // Чистый белый
   },
   {
     id: 'energy',
     name: 'Энергосберегающая',
     description: 'Чистый чёрный фон. Экономит заряд на OLED-экранах.',
-    colors: ['#000000', '#0a0a0a', '#818cf8', '#141414'],
+    color: '#000000', // Абсолютно черный
   },
   {
     id: 'pink',
-    name: 'Pink Glassmorphism',
-    description: 'Розовые карточки с матовым стеклянным эффектом.',
-    colors: ['#0d0010', '#1e0a2e', '#f0abfc', '#2d1040'],
+    name: 'Light Pink',
+    description: 'Светлые матовые карточки с нежными пастельными тонами и розовым акцентом.',
+    color: 'linear-gradient(135deg, #FBCFE8 0%, #FED7AA 100%)', // Нежный розово-персиковый перелив
   },
 ]
-
 const goToProfile = () => {
   router.push('/profile')
 }
@@ -391,15 +389,11 @@ const copyPhoneOnly = async () => {
             ? 'bg-accent/10 border-accent/40'
             : 'bg-raised/40 border-line hover:bg-raised/70'"
         >
-          <!-- Превью палитры -->
-          <div class="flex shrink-0 rounded-xl overflow-hidden border border-line-muted/30 shadow-sm" style="width: 52px; height: 52px;">
-            <div class="grid grid-cols-2 w-full h-full">
-              <div :style="{ background: theme.colors[0] }"></div>
-              <div :style="{ background: theme.colors[2] }"></div>
-              <div :style="{ background: theme.colors[3] }"></div>
-              <div :style="{ background: theme.colors[1] }"></div>
-            </div>
-          </div>
+          <!-- Круглое превью палитры -->
+          <div 
+            class="shrink-0 rounded-full border border-line-muted/30 shadow-sm" 
+            :style="{ background: theme.color, width: '52px', height: '52px' }"
+          ></div>
 
           <!-- Текст -->
           <div class="flex-1 flex flex-col gap-0.5 min-w-0">

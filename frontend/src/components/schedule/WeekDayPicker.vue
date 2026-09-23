@@ -44,11 +44,11 @@ const isToday = (d: Date) => isSameDate(d, props.today)
         class="relative z-10 flex-1 py-1.5 flex flex-col justify-center items-center transition-all duration-300 touch-manipulation rounded-xl overflow-hidden"
         :class="isSameDate(selectedDate, date) ? 'text-primary' : 'text-muted hover:text-tertiary'"
       >
-        <!-- Подсветка сегодняшнего дня -->
+      <!-- Подсветка сегодняшнего дня -->
         <div
           v-if="isToday(date)"
           class="absolute inset-0 pointer-events-none"
-          style="background: radial-gradient(circle at center, rgba(59, 192, 241, 0.28) 5%, transparent 76%);"
+          style="background: radial-gradient(circle at center, var(--today-glow) 5%, transparent 76%);"
         ></div>
         <span class="relative z-10 text-[10px] font-medium uppercase tracking-wider mb-0.5">{{ shortDays[date.getDay()] }}</span>
         <span class="relative z-10 text-base font-bold leading-none">{{ date.getDate() }}</span>
