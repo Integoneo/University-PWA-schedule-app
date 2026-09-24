@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import BottomSheet from './BottomSheet.vue'
 import { store } from '../store'
 import type { AppTheme } from '../store'
-import { overlayManager } from '../composables/useOverlayManager'
 import { CURRENT_VERSION } from '../config/changelog'
 
 const router = useRouter()
@@ -13,25 +12,7 @@ const router = useRouter()
 const isAboutSheetOpen = ref(false)
 const isShareSheetOpen = ref(false)
 const isDevSheetOpen = ref(false)
-
-// === ТЕМА ===
-const isThemePickerOpen = computed(
-  () => overlayManager.state.activeItem?.id === 'theme_picker',
-)
-
-const openThemePicker = () => {
-  overlayManager.enqueue({
-    id: 'theme_picker',
-    type: 'modal',
-    scope: 'settings',
-    delayBefore: 0,
-    delayAfter: 0,
-  })
-}
-
-const closeThemePicker = () => {
-  overlayManager.dismiss('theme_picker')
-}
+const isThemePickerOpen = ref(false)
 
 const selectTheme = (theme: AppTheme) => {
   store.setTheme(theme)
@@ -172,7 +153,7 @@ const copyPhoneOnly = async () => {
         <div class="h-px w-full bg-line/50 my-1"></div>
 
         <!-- 0. Тема оформления -->
-        <button @click="openThemePicker" class="flex items-center justify-between p-4 hover:bg-raised/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
+        <button @click="isThemePickerOpen = true" class="flex items-center justify-between p-4 hover:bg-raised/50 rounded-2xl transition-colors text-left active:scale-[0.98]">
           <div class="flex items-center gap-4">
             <div class="p-2.5 rounded-xl bg-accent/10 text-accent border border-accent/20">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
@@ -371,7 +352,7 @@ const copyPhoneOnly = async () => {
     </BottomSheet>
 
     <!-- 4. Шторка "Оформление" (управляется через overlayManager) -->
-    <BottomSheet :is-open="isThemePickerOpen" @close="closeThemePicker">
+    <BottomSheet :is-open="isThemePickerOpen" @close="isThemePickerOpen = false">
       <template #header>
         <div class="flex flex-col gap-1 pb-1">
           <h2 class="text-2xl font-bold text-primary">Оформление</h2>
