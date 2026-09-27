@@ -145,6 +145,24 @@ services:
       redis_db:
         condition: service_healthy
 
+  api-parser:
+    build: ./scanner/api-parser
+    container_name: api-parser
+    profiles:
+      - local
+      - prod
+    restart: on-failure:3
+    depends_on:
+      redis_db:
+        condition: service_healthy
+    # Пробрасываем переменные из общего .env файла:
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis_db:6379}
+      PROXY_HOST: ${PROXY_HOST:-}
+      PROXY_PORT: ${PROXY_PORT:-}
+      PROXY_LOGIN_PARSING: ${PROXY_LOGIN_PARSING:-}
+      PROXY_PASSWORD_PARSING: ${PROXY_PASSWORD_PARSING:-}
+
   downloader:
     build: ./scanner/downloader
     container_name: downloader

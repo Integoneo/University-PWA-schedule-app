@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -18,8 +19,14 @@ type Config struct {
 }
 
 const (
-	GroupsListKey     = "db:api:groups:list"
-	GroupsListETagKey = "db:api:groups:ETag"
+	GroupsListKey              = "db:api:groups:list"
+	GroupsListETagKey          = "db:api:groups:ETag"
+	GroupsSchedulesKey         = "db:api:groups_schedules:list"
+	GroupsSchedulesETagKey     = "db:api:groups_schedules:ETag"
+	GroupsEmptySchedulesKey    = "db:api:groups_schedules:empty"
+	GroupsSchedulesHashKey     = "db:api:groups_schedules:Hash"
+	GroupsSchedulesHasActivity = "db:api:groups_schedules:Activity_detected"
+	SleepDuration              = 5 * time.Minute
 )
 
 // const GroupsSchedulesKey = "db:api:groups_schedules:list"
@@ -78,7 +85,7 @@ func InitConfig() {
 	AppConfig = &Config{
 		ProxyURL:      proxy,
 		RedisURL:      getEnv("REDIS_URL", "redis://127.0.0.1:6379/0"),
-		APIURL_GROUPS: getEnv("APIURL_GROUPS", "https://timetable.rguk.ru/api/items/groups?fields=id,name,plan.year_start,plan.faculty.name&limit=4"),
+		APIURL_GROUPS: getEnv("APIURL_GROUPS", "https://timetable.rguk.ru/api/items/groups?fields=id,name,plan.year_start,plan.faculty.name&limit=-1"),
 	}
 }
 

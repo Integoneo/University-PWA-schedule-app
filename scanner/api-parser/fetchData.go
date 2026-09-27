@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"time"
 
@@ -11,24 +12,20 @@ import (
 	"github.com/enetx/surf"
 )
 
-// Результат запроса
-type FetchResult struct {
-	StatusCode int
-	Body       []byte
-	ETag       string
-}
-
 // Универсальный клиент с ретраями
 func fetchWithRetry(url string, etag string, maxRetries int) (*FetchResult, error) {
-	client := surf.NewClient().Builder().
-		Impersonate().RandomOS().Firefox().
-		Proxy(g.String(AppConfig.ProxyURL)).
-		DisableKeepAlive().
-		Build().Unwrap()
-
 	var lastErr error
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+		// Создаем клиент внутри попытки, чтобы при обрыве HTTP/2 соединение не залипало
+		client := surf.NewClient().Builder().
+			Impersonate().RandomOS().Firefox().
+			Proxy(g.String(AppConfig.ProxyURL)).
+			DisableKeepAlive().
+			// ForceHTTP1().              // Никаких капризных фреймов HTTP/2
+			Timeout(45 * time.Second). // Даем Directus время собрать тяжелый SQL-запрос
+			Build().Unwrap()
+
 		req := client.Get(g.String(url))
 		if etag != "" {
 			req.AddHeaders(g.Map[g.String, g.String]{
@@ -38,27 +35,45 @@ func fetchWithRetry(url string, etag string, maxRetries int) (*FetchResult, erro
 
 		resp := req.Do()
 
-		// 1. Ошибка сетевого соединения (таймаут, DNS, прокси разорвал соединение)
+		// 1. Ошибка отправки запроса или получения заголовков
 		if resp.IsErr() {
 			lastErr = fmt.Errorf("ошибка сети: %v", resp.Err())
 			slog.Warn("сбой сетевого запроса, пробуем снова", "attempt", attempt, "err", lastErr)
-			time.Sleep(time.Duration(attempt*2) * time.Second) // пауза: 2с, 4с...
+			time.Sleep(time.Duration(attempt*2) * time.Second)
 			continue
 		}
 
 		httpResp := resp.Ok()
-		statusCode := httpResp.StatusCode
+		statusCode := int(httpResp.StatusCode)
 
-		// 2. Успешные ответы
-		if statusCode == 200 || statusCode == 304 {
+		// 2. Статус 304 Not Modified — тела нет по стандарту HTTP, сразу выходим
+		if statusCode == 304 {
 			return &FetchResult{
-				StatusCode: int(statusCode),
-				Body:       []byte(httpResp.Body.Bytes().Unwrap()),
+				StatusCode: 304,
+				Body:       nil,
 				ETag:       string(httpResp.Headers.Get("ETag")),
 			}, nil
 		}
 
-		// 3. Фатальные ошибки конфигурации/банов — ретраить бессмысленно, глушим сразу!
+		// 3. Статус 200 OK — БЕЗОПАСНО вычитываем тело (без паник)
+		if statusCode == 200 {
+			bodyRes := httpResp.Body.Bytes()
+			if bodyRes.IsErr() {
+				// Вот тут и ловится http2: client connection lost
+				lastErr = fmt.Errorf("обрыв соединения при скачивании тела: %v", bodyRes.Err())
+				slog.Warn("соединение разорвано при чтении данных, ретрай", "attempt", attempt, "err", lastErr)
+				time.Sleep(time.Duration(attempt*2) * time.Second)
+				continue
+			}
+
+			return &FetchResult{
+				StatusCode: 200,
+				Body:       []byte(bodyRes.Ok()),
+				ETag:       string(httpResp.Headers.Get("ETag")),
+			}, nil
+		}
+
+		// 4. Фатальные ошибки авторизации / банов — глушим бинарник
 		if statusCode == 407 {
 			Notify("DEAD", "Ошибка авторизации в прокси (407)", "Проверьте логин/пароль к прокси-пулу")
 			slog.Error("407 Proxy Authentication Required. Завершение работы.")
@@ -75,41 +90,15 @@ func fetchWithRetry(url string, etag string, maxRetries int) (*FetchResult, erro
 			os.Exit(1)
 		}
 
-		// 4. Ошибки сервера (500, 502, 503, 504) или Rate Limit (429) — пробуем снова
+		// 5. Ошибки сервера (500, 502, 503, 504) или Rate Limit (429)
 		lastErr = fmt.Errorf("сервер вернул статус: %d", statusCode)
 		slog.Warn("ошибка сервера, ретрай через паузу", "attempt", attempt, "status", statusCode)
-		time.Sleep(time.Duration(attempt*2) * time.Second)
+		time.Sleep(time.Duration(attempt*4) * time.Second)
 	}
 
-	// Если все попытки исчерпаны
+	// Если все 3 попытки исчерпаны
 	Notify("ERROR", "Исчерпаны ретраи сетевых запросов", fmt.Sprintf("URL: %s | Ошибка: %v", url, lastErr))
 	return nil, lastErr
-}
-
-type GroupsResponse struct {
-	Data []GroupItem `json:"data"`
-}
-
-type GroupItem struct {
-	ID   int      `json:"id"`
-	Name string   `json:"name"`
-	Plan PlanItem `json:"plan"`
-}
-
-type PlanItem struct {
-	YearStart int         `json:"year_start"`
-	Faculty   FacultyItem `json:"faculty"`
-}
-
-type FacultyItem struct {
-	Name string `json:"name"`
-}
-
-type GroupRedisItem struct {
-	ID        int    `json:"id"`
-	Name      string `json:"name"`
-	YearStart int    `json:"year_start"`
-	Faculty   string `json:"faculty"`
 }
 
 func fetchGroups() []GroupRedisItem {
@@ -184,7 +173,7 @@ func fetchGroups() []GroupRedisItem {
 	}
 
 	for _, group := range response.Data {
-		item := &GroupRedisItem{
+		item := GroupRedisItem{
 			ID:        group.ID,
 			Name:      group.Name,
 			YearStart: group.Plan.YearStart,
@@ -197,6 +186,9 @@ func fetchGroups() []GroupRedisItem {
 			continue
 		}
 		pipe.HSet(Ctx, GroupsListKey, group.ID, data)
+
+		// Сразу наполняем возвращаемый массив без повторного похода в Redis!
+		parsingResponse = append(parsingResponse, item)
 	}
 
 	_, err = pipe.Exec(Ctx)
@@ -204,25 +196,19 @@ func fetchGroups() []GroupRedisItem {
 		slog.Error("Не удалось сохранить группы в Redis", "err", err)
 	}
 
-	slog.Info("Группы успешно получены и проверены", "count", len(response.Data))
+	slog.Info("Группы успешно получены и сохранены", "count", len(parsingResponse))
+	// Notify("INFO", "Спарсен список групп", fmt.Sprintf("Успешно получено %d групп", len(parsingResponse)))
 
-	// INFO: Убрать в проде
-	Notify("INFO", "Спарсен список групп", fmt.Sprintf("Успешно получено %d групп", len(response.Data)))
-
-	slog.Info("Список групп не изменился (304 Not Modified). Пропускаем.")
-	savedGroups, err := RDB.HGetAll(Ctx, GroupsListKey).Result()
-	if err != nil {
-		slog.Error("Не удалось достать группы из Redis", "err", err)
-	} else {
-		for key, val := range savedGroups {
-			var item GroupRedisItem
-			err := json.Unmarshal([]byte(val), &item)
-			if err != nil {
-				slog.Error("Битый JSON группы в Redis", "id", key, "err", err)
-				continue
-			}
-			parsingResponse = append(parsingResponse, item)
-		}
-	}
 	return parsingResponse
+}
+
+func fetchGroupSchedule(groupID int, dateGTE, dateLT, etag string) (*FetchResult, error) {
+	filterJSON := fmt.Sprintf(`{"groups":{"groups_id":{"id":{"_eq":%d}}},"date_start":{"_gte":"%s","_lt":"%s"}}`,
+		groupID, dateGTE, dateLT)
+	fields := "date_start,date_end,description,type_of_employment.short_name,auditories.auditories_id.name,teachers.teachers_id.name,groups_plans_disciplines.groups_plans_disciplines_id.plan_discipline.discipline.name"
+
+	apiURL := fmt.Sprintf("https://timetable.rguk.ru/api/items/timetable_entries?filter=%s&fields=%s",
+		url.QueryEscape(filterJSON), fields)
+
+	return fetchWithRetry(apiURL, etag, 3)
 }
