@@ -26,7 +26,7 @@ const (
 	GroupsEmptySchedulesKey    = "db:api:groups_schedules:empty"
 	GroupsSchedulesHashKey     = "db:api:groups_schedules:Hash"
 	GroupsSchedulesHasActivity = "db:api:groups_schedules:Activity_detected"
-	SleepDuration              = 5 * time.Minute
+	SleepDuration              = 60 * time.Minute
 )
 
 // const GroupsSchedulesKey = "db:api:groups_schedules:list"

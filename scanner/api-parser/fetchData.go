@@ -6,11 +6,55 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/enetx/g"
 	"github.com/enetx/surf"
 )
+
+// simplifyError вытаскивает короткую суть сетевого сбоя
+func simplifyError(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+	msg := err.Error()
+
+	switch {
+	case strings.Contains(msg, "i/o timeout"):
+		return "i/o timeout"
+	case strings.Contains(msg, "context deadline exceeded"):
+		return "context deadline exceeded"
+	case strings.Contains(msg, "client connection lost"):
+		return "client connection lost"
+	case strings.Contains(msg, "connection reset by peer"):
+		return "connection reset"
+	case strings.Contains(msg, "connection refused"):
+		return "connection refused"
+	default:
+		// Для ошибок статуса сервера (502, 503) или других непредвиденных
+		if len(msg) > 50 {
+			return msg[:50] + "..."
+		}
+		return msg
+	}
+}
+
+// shortenTarget вытаскивает только ID группы вместо 400-символьного URL
+func shortenTarget(rawURL string) string {
+	// Достаем ID группы из закодированного или обычного JSON фильтра
+	re := regexp.MustCompile(`(?:%22_eq%22%3A|"_eq":)(\d+)`)
+	if match := re.FindStringSubmatch(rawURL); len(match) > 1 {
+		return fmt.Sprintf("group_id: %s", match[1])
+	}
+
+	// Если это другой эндпоинт (например, получение списка групп), отрезаем query
+	if idx := strings.Index(rawURL, "?"); idx != -1 {
+		return rawURL[:idx]
+	}
+	return rawURL
+}
 
 // Универсальный клиент с ретраями
 func fetchWithRetry(url string, etag string, maxRetries int) (*FetchResult, error) {
@@ -97,7 +141,7 @@ func fetchWithRetry(url string, etag string, maxRetries int) (*FetchResult, erro
 	}
 
 	// Если все 3 попытки исчерпаны
-	Notify("ERROR", "Исчерпаны ретраи сетевых запросов", fmt.Sprintf("URL: %s | Ошибка: %v", url, lastErr))
+	Notify("ERROR", "Исчерпаны ретраи сетевых запросов", fmt.Sprintf("%s | %s", shortenTarget(url), simplifyError(lastErr)))
 	return nil, lastErr
 }
 
