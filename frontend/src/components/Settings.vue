@@ -96,34 +96,6 @@ const shareNative = async () => {
 }
 
 
-// === ЛОГИКА РАЗРАБОТЧИКА ===
-const openTelegram = () => {
-  window.open('https://t.me/integoneo', '_blank')
-}
-
-// Твой реальный номер телефона
-const myPhoneNumber = '+7 977 964-91-99' 
-
-const copyPhoneOnly = async () => {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(myPhoneNumber)
-    } else {
-      const textArea = document.createElement("textarea")
-      textArea.value = myPhoneNumber
-      textArea.style.position = "fixed"
-      textArea.style.opacity = "0"
-      document.body.appendChild(textArea)
-      textArea.focus()
-      textArea.select()
-      document.execCommand('copy')
-      textArea.remove()
-    }
-    store.addToast('Номер скопирован', 'success')
-  } catch (err) {
-    store.addToast('Ошибка копирования', 'error')
-  }
-}
 </script>
 
 <template>
@@ -244,17 +216,6 @@ const copyPhoneOnly = async () => {
       
       <div class="flex flex-col gap-5 mt-4">
         
-        <!-- Написать в ТГ разработчику -->
-        <button @click="openTelegram" class="w-full p-4 flex items-center gap-3 bg-[#2AABEE]/10 hover:bg-[#2AABEE]/20 border border-[#2AABEE]/20 rounded-2xl transition-colors text-left active:scale-[0.98]">
-          <div class="p-2.5 rounded-full bg-[#2AABEE]/20 text-[#2AABEE] shrink-0">
-            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/></svg>
-          </div>
-          <div class="flex flex-col pr-2">
-            <span class="text-sm font-bold text-[#2AABEE] mb-0.5">Написать разработчику</span>
-            <span class="text-[11px] text-[#2AABEE]/70 leading-tight">Нашли баг или есть фидбек? Я на связи</span>
-          </div>
-        </button>
-
         <!-- Канал приложения -->
         <a
           href="https://t.me/kosyga_space_app"
@@ -271,24 +232,7 @@ const copyPhoneOnly = async () => {
           </div>
         </a>
         
-<div class="h-px w-full bg-line/50"></div>
-
-        <!-- БЛОК ДОНАТОВ -->
-        <div class="flex flex-col gap-3">
-          
-          <div class="flex flex-col mb-1">
-            <span class="text-lg font-bold text-primary mb-1">Угостить латте ☕</span>
-            <span class="text-[11px] text-muted leading-snug">
-              Перевод по номеру телефона (Сбербанк или Альфа-Банк). Любая поддержка помогает проекту жить и развиваться!
-            </span>
-          </div>
-
-          <button @click="copyPhoneOnly" class="w-full py-4 flex items-center justify-center gap-2.5 bg-raised hover:bg-raised/80 border border-line-muted text-secondary font-bold rounded-2xl transition-colors active:scale-[0.98]">
-            <svg class="w-5 h-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-            Скопировать номер телефона
-          </button>
-          
-        </div>
+        <div class="h-px w-full bg-line/50"></div>
       </div>
     </BottomSheet>
     <!-- 2. Шторка "Поделиться" -->
