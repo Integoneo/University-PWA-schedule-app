@@ -5,6 +5,7 @@ import BottomSheet from './BottomSheet.vue'
 import { store } from '../store'
 import type { AppTheme } from '../store'
 import { CURRENT_VERSION } from '../config/changelog'
+import { CLOUDTIPS_URL } from '../composables/useDonationPrompt'
 
 const router = useRouter()
 
@@ -53,6 +54,10 @@ const themes: ThemeOption[] = [
 ]
 const goToProfile = () => {
   router.push('/profile')
+}
+
+const openCloudTips = () => {
+  window.open(CLOUDTIPS_URL, '_blank', 'noopener,noreferrer')
 }
 
 // === ЛОГИКА ШАРИНГА ===
@@ -233,6 +238,18 @@ const shareNative = async () => {
         </a>
         
         <div class="h-px w-full bg-line/50"></div>
+
+        <!-- Поддержать проект (window.open — на iOS гарантированно уходит во внешний Safari) -->
+        <button
+          @click="openCloudTips"
+          class="w-full p-4 flex items-center gap-3 bg-accent/5 hover:bg-accent/15 border border-accent/15 rounded-2xl transition-colors text-left active:scale-[0.98]"
+        >
+          <div class="p-2.5 rounded-full bg-accent/15 text-accent shrink-0 text-lg leading-none">☕</div>
+          <div class="flex flex-col pr-2">
+            <span class="text-sm font-bold text-accent mb-0.5">Поддержать проект</span>
+            <span class="text-[11px] text-muted leading-tight">Хостинг стоит денег, а приложение живёт на энтузиазме. Любая сумма через CloudTips помогает серверу работать дальше</span>
+          </div>
+        </button>
       </div>
     </BottomSheet>
     <!-- 2. Шторка "Поделиться" -->

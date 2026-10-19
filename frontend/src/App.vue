@@ -5,9 +5,11 @@ import { api } from './api'
 import { onMounted } from 'vue'
 import Modal from './components/Modal.vue'
 import ChangelogModal from './components/ChangelogModal.vue'
+import DonationModal from './components/DonationModal.vue'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { overlayManager } from './composables/useOverlayManager'
 import { useChangelogDetector } from './composables/useChangelogDetector'
+import { useDonationPrompt } from './composables/useDonationPrompt'
 
 
 const { needRefresh, updateServiceWorker } = useRegisterSW({
@@ -48,6 +50,7 @@ const route = useRoute()
 const router = useRouter()
 
 const { check: checkChangelog } = useChangelogDetector()
+const { check: checkDonation } = useDonationPrompt()
 
 onMounted(() => {
   // 0a. Применяем сохранённую тему до первого рендера (до любой другой логики)
@@ -55,6 +58,9 @@ onMounted(() => {
 
   // 0. Проверяем новые версии и при необходимости ставим в очередь модалку
   checkChangelog()
+
+  // 0b. Донат-промпт: сам решит, пора ли, и встанет в очередь последним
+  checkDonation()
 
   // 1. При старте пробуем отправить статистику установки (если это standalone/PWA)
   api.syncInstallStats()
@@ -197,6 +203,9 @@ const tabs = [
 
       <!-- МОДАЛКА CHANGELOG (управляется через overlayManager) -->
       <ChangelogModal v-if="overlayManager.state.activeItem?.id === 'changelog'" />
+
+      <!-- ДОНАТ (управляется через overlayManager) -->
+      <DonationModal v-if="overlayManager.state.activeItem?.id === 'donation'" />
     </Teleport>
   </main>
 </template>
