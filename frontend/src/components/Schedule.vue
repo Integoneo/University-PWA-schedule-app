@@ -10,7 +10,10 @@ import WeekDayPicker from './schedule/WeekDayPicker.vue'
 import ScheduleBody from './schedule/ScheduleBody.vue'
 import GroupInfoSheet from './schedule/GroupInfoSheet.vue'
 import ExcelModal from './schedule/ExcelModal.vue'
+import NoteEditorSheet from './schedule/NoteEditorSheet.vue'
 import TeacherSchedule from './TeacherSchedule.vue'
+import { useLessonNotes } from '../composables/schedule/useLessonNotes'
+import type { OrphanNote } from '../composables/schedule/useLessonNotes'
 
 // ── Опорная дата (ref — обновляется в полночь) ─────────────────────────────
 const realToday = ref(new Date())
@@ -36,7 +39,12 @@ const {
 // ── Состояние UI ───────────────────────────────────────────────────────────
 const isGroupSheetOpen = ref(false)
 const isExcelModalOpen = ref(false)
+const isNoteEditorOpen = ref(false)
+const editingLesson = ref<any>(null)
 const currentMinutes = ref(new Date().getHours() * 60 + new Date().getMinutes())
+
+const notes = useLessonNotes()
+const notesEnabled = computed(() => store.viewContext === 'main')
 
 // ── Автоматический переход через полночь ───────────────────────────────────
 // visibilitychange + setInterval(60s) — надёжнее setTimeout для PWA.
@@ -98,6 +106,47 @@ const currentState = computed(() => {
   if (currentLessons.value.length === 0) return 'empty'
   return 'lessons'
 })
+
+const lessonNoteKey = (lesson: any) =>
+  String(lesson.id ?? `${lesson.number_of_lesson}-${lesson.lesson_name}`)
+
+const noteMaps = computed(() => {
+  void notes.revision.value
+  const general: Record<string, string> = {}
+  const dated: Record<string, string> = {}
+  if (!notesEnabled.value) return { general, dated }
+  for (const lesson of currentLessons.value) {
+    const key = lessonNoteKey(lesson)
+    const g = notes.getGeneralNote(lesson)
+    const d = notes.getDatedNote(lesson, selectedDate.value)
+    if (g) general[key] = g
+    if (d) dated[key] = d
+  }
+  return { general, dated }
+})
+
+const orphansOfDay = computed(() => {
+  void notes.revision.value
+  return notesEnabled.value ? notes.getOrphansForDate(selectedDate.value, currentLessons.value) : []
+})
+
+const openNoteEditor = (lesson: any) => {
+  editingLesson.value = lesson
+  isNoteEditorOpen.value = true
+}
+
+const confirmDeleteOrphan = (orphan: OrphanNote) => {
+  store.showModal({
+    title: 'Удалить потеряшку?',
+    message: `Заметка к «${orphan.lessonName}» (${orphan.startTime?.slice(0, 5)}, ${orphan.slot} пара) будет удалена без возможности восстановления.`,
+    confirmText: 'Удалить',
+    type: 'danger',
+    onConfirm: () => {
+      notes.deleteDatedByKey(orphan.key)
+      store.addToast('Потеряшка удалена', 'info')
+    },
+  })
+}
 
 // ── Логика гайда по свайпу ─────────────────────────────────────────────────
 const completeSwipeGuide = () => {
@@ -353,10 +402,16 @@ onUnmounted(() => {
         :transitionName="transitionName"
         :showSwipeGuide="overlayManager.state.activeItem?.id === 'swipe_guide'"
         :isTouchDevice="isTouchDevice"
+        :notesEnabled="notesEnabled"
+        :generalNotes="noteMaps.general"
+        :datedNotes="noteMaps.dated"
+        :orphans="orphansOfDay"
         @touchstart="onTouchStart"
         @touchend="handleTouchEnd"
         @retry="fetchScheduleData(true)"
         @swipeGuideDismiss="completeSwipeGuide"
+        @editNote="openNoteEditor"
+        @deleteOrphan="confirmDeleteOrphan"
       />
 
       <GroupInfoSheet
@@ -375,6 +430,14 @@ onUnmounted(() => {
         :isOpen="isExcelModalOpen"
         :url="originalExcelUrl"
         @close="isExcelModalOpen = false"
+      />
+
+      <NoteEditorSheet
+        :isOpen="isNoteEditorOpen"
+        :lesson="editingLesson"
+        :date="selectedDate"
+        @close="isNoteEditorOpen = false"
+        @saved="store.addToast('Заметки сохранены', 'success')"
       />
 
     </template>

@@ -2,14 +2,20 @@
 /**
  * Карточка одной пары.
  *
- * Чистый презентационный компонент — никаких emit'ов.
- * ТОЧКА РАСШИРЕНИЯ: для расписания преподавателей создаётся TeacherLessonCard.vue
- * с иной разметкой (список групп вместо списка преподов и т.п.)
+ * Презентационный компонент. Заметки и карандаш — только для основной группы
+ * (проп notesEnabled). Преподавательский режим использует TeacherLessonCard.
  */
 defineProps<{
   lesson: any
   state: 'future' | 'past' | 'soon' | 'now'
   timeLeft: number
+  generalNote?: string | null
+  datedNote?: string | null
+  notesEnabled?: boolean
+}>()
+
+defineEmits<{
+  editNote: []
 }>()
 
 const getBadgeColor = (type: string) => {
@@ -84,6 +90,18 @@ const formatPlace = (place: string) => {
             Идёт · ещё {{ timeLeft }} мин
           </span>
         </div>
+
+        <button
+          v-if="notesEnabled"
+          @click.stop="$emit('editNote')"
+          class="p-1.5 rounded-lg text-subtle hover:text-accent hover:bg-accent/10 transition-colors shrink-0"
+          :class="state !== 'soon' && state !== 'now' ? 'ml-auto' : 'ml-1'"
+          aria-label="Редактировать заметки"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+        </button>
       </div>
 
       <!-- НАЗВАНИЕ ПАРЫ -->
@@ -112,6 +130,16 @@ const formatPlace = (place: string) => {
             <span v-for="teacher in lesson.teachers" :key="teacher.id" class="truncate font-medium">{{ teacher.name }}</span>
           </div>
         </div>
+      </div>
+
+      <!-- ЗАМЕТКИ -->
+      <div v-if="notesEnabled && (generalNote || datedNote)" class="mt-3 flex flex-col gap-1.5">
+        <p v-if="generalNote" class="text-[11px] text-muted leading-snug break-words">
+          <span class="mr-1">📌</span>{{ generalNote }}
+        </p>
+        <p v-if="datedNote" class="text-[11px] text-muted leading-snug break-words">
+          <span class="mr-1">📝</span>{{ datedNote }}
+        </p>
       </div>
     </div>
   </div>

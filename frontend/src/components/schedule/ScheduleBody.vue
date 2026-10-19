@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import LessonCard from './LessonCard.vue'
+import OrphanNoteCard from './OrphanNoteCard.vue'
 import SwipeGuide from './SwipeGuide.vue'
+import type { OrphanNote } from '../../composables/schedule/useLessonNotes'
 
 /**
  * Основная область контента: свайп-обёртка + анимированный переход между днями.
@@ -16,6 +19,10 @@ const props = defineProps<{
   transitionName: string
   showSwipeGuide: boolean
   isTouchDevice: boolean
+  notesEnabled?: boolean
+  generalNotes?: Record<string, string>
+  datedNotes?: Record<string, string>
+  orphans?: OrphanNote[]
 }>()
 
 const emit = defineEmits<{
@@ -23,7 +30,34 @@ const emit = defineEmits<{
   touchend: [e: TouchEvent]
   retry: []
   swipeGuideDismiss: []
+  editNote: [lesson: any]
+  deleteOrphan: [orphan: OrphanNote]
 }>()
+
+const lessonKey = (lesson: any) =>
+  String(lesson.id ?? `${lesson.number_of_lesson}-${lesson.lesson_name}`)
+
+const dayItems = computed(() => {
+  const items: Array<
+    | { kind: 'lesson'; lesson: any; sortTime: string }
+    | { kind: 'orphan'; orphan: OrphanNote; sortTime: string }
+  > = props.lessons.map(l => ({ kind: 'lesson' as const, lesson: l, sortTime: l.start_time || '' }))
+
+  for (const o of props.orphans ?? []) {
+    items.push({ kind: 'orphan', orphan: o, sortTime: o.startTime || '' })
+  }
+
+  return items.sort((a, b) => {
+    const cmp = a.sortTime.localeCompare(b.sortTime)
+    if (cmp !== 0) return cmp
+    if (a.kind === b.kind) return 0
+    return a.kind === 'lesson' ? -1 : 1
+  })
+})
+
+const hasDayContent = computed(
+  () => props.currentState === 'lessons' || ((props.orphans?.length ?? 0) > 0 && props.currentState === 'empty'),
+)
 
 // --- вспомогательные чистые функции (дублируются намеренно — нет внешних зависимостей) ---
 
@@ -119,21 +153,31 @@ const getTimeLeft = (lesson: any) => {
           <p class="text-muted text-sm font-medium">Учеба всё! Желаю удачи на сессии<br>(или классного отдыха).</p>
         </div>
 
-        <!-- ВЫХОДНОЙ / НЕТ ПАР -->
-        <div v-else-if="currentState === 'empty'" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
+        <!-- ВЫХОДНОЙ / НЕТ ПАР (и нет потеряшек) -->
+        <div v-else-if="currentState === 'empty' && !hasDayContent" class="mt-12 flex flex-col items-center justify-center text-center space-y-3 opacity-60">
           <div class="w-20 h-20 rounded-full bg-surface/50 border border-line flex items-center justify-center text-3xl">😴</div>
           <p class="text-muted text-sm font-medium">В этот день пар нет.<br>Можно отдохнуть!</p>
         </div>
 
-        <!-- СПИСОК ПАР -->
-        <div v-else-if="currentState === 'lessons'" class="flex flex-col gap-4">
-          <LessonCard
-            v-for="lesson in lessons"
-            :key="lesson.id"
-            :lesson="lesson"
-            :state="getLessonState(lesson)"
-            :timeLeft="getTimeLeft(lesson)"
-          />
+        <!-- СПИСОК ПАР + ПОТЕРЯШКИ -->
+        <div v-else-if="hasDayContent" class="flex flex-col gap-4">
+          <template v-for="item in dayItems" :key="item.kind === 'lesson' ? 'l-' + lessonKey(item.lesson) : 'o-' + item.orphan.key">
+            <LessonCard
+              v-if="item.kind === 'lesson'"
+              :lesson="item.lesson"
+              :state="getLessonState(item.lesson)"
+              :timeLeft="getTimeLeft(item.lesson)"
+              :generalNote="generalNotes?.[lessonKey(item.lesson)]"
+              :datedNote="datedNotes?.[lessonKey(item.lesson)]"
+              :notesEnabled="notesEnabled"
+              @editNote="emit('editNote', item.lesson)"
+            />
+            <OrphanNoteCard
+              v-else
+              :orphan="item.orphan"
+              @delete="emit('deleteOrphan', item.orphan)"
+            />
+          </template>
         </div>
 
       </div>

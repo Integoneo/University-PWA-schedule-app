@@ -3,6 +3,7 @@ import type { Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { store } from '../../store'
 import { api } from '../../api'
+import { migrateNotes } from './useLessonNotes'
 
 /**
  * Composable: загрузка и хранение данных расписания.
@@ -70,6 +71,12 @@ export function useScheduleData(options: { selectedDate: Ref<Date>; realToday: R
       allLessons.value = data.lessons || []
       originalExcelUrl.value = data.view_url || null
       lastFetchStatus = data._meta?.status || 'actual'
+
+      // Заметки живут только у основной группы: чужое расписание не должно
+      // вычищать общие заметки по несовпадению названий предметов.
+      if (store.currentViewingGroup?.group_id === store.groupInfo?.group_id) {
+        migrateNotes(allLessons.value)
+      }
 
       educationStart.value = data.start_education_date ? new Date(data.start_education_date) : null
       educationEnd.value = data.end_education_date ? new Date(data.end_education_date) : null
